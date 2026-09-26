@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Car model test</title>
+<style>html,body{margin:0;background:#222;overflow:hidden}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.min.js"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { BODIES, configForBody, DEFAULT_CONFIG, buildTuning } from '../js/vehicle/specs.js';
+import { buildCarModel } from '../js/vehicle/carBuilder.js';
+const params = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fb4d8);
+const pm = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+envScene.background = new THREE.Color(0x9ab8d8);
+const env = pm.fromScene(envScene).texture;
+scene.environment = env;
+scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x404040, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+sun.position.set(10, 20, 8); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20 });
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const bodies = Object.keys(BODIES);
+const colors = ['#b01e23', '#1f4fa8', '#f2b90c', '#2b7a3c', '#e8e8ea', '#ff6a13', '#101114'];
+const liveries = ['none','stripes','side','flames','twotone','checker','none'];
+const cars = [];
+bodies.forEach((id, i) => {
+  const cfg = { ...configForBody(id, DEFAULT_CONFIG), paint: colors[i % colors.length], livery: liveries[i], spoiler: i === 3 ? 'gt' : i === 0 ? 'wing' : 'none', wheelStyle: ['fivespoke','mesh','deepdish','turbine','offroad','steel','split'][i] };
+  const t = buildTuning(cfg);
+  const npc = params.get('npc') === '1';
+  const m = buildCarModel(cfg, t, { npc, police: false });
+  const only = params.get('only'); if (only !== null && +only !== i) return;
+  m.root.position.set(only !== null ? 0 : (i - 3) * 2.6, t.com.y, 0);
+  m.root.rotation.y = params.get('rot') ? parseFloat(params.get('rot')) : 0;
+  scene.add(m.root);
+  t.wheels.forEach((w, k) => { const wv = m.wheels[k]; wv.group.position.set(w.center.x - t.com.x, w.center.y - t.com.y, w.center.z - t.com.z); });
+  for (const l of m.lights.head) l.mat.emissiveIntensity = 2;
+  for (const l of m.lights.tail) l.mat.emissiveIntensity = 1;
+  if (params.get('dent') === '1') {
+    m.lattice.impact(new THREE.Vector3(0.3, 0.6, t.dims.L/2), new THREE.Vector3(0, 0, -1), 0.5, 0.5);
+    m.lattice.impact(new THREE.Vector3(0.9, 0.8, 0.3), new THREE.Vector3(-1, 0, 0), 0.3, 0.5);
+    m.applyDeformation();
+  }
+  cars.push(m);
+});
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 500);
+const view = params.get('view') || 'side';
+if (view === 'side') { cam.position.set(0, 3.5, 22); cam.lookAt(0, 0.7, 0); }
+if (view === 'front') { cam.position.set(8, 3, 14); cam.lookAt(0, 0.7, 0); }
+if (view === 'rear') { cam.position.set(-6, 3, -16); cam.lookAt(0, 0.7, 0); }
+if (view === 'prof') { cam.position.set(9, 1.2, 0.01); cam.lookAt(0, 0.8, 0); cam.fov = 30; cam.updateProjectionMatrix(); }
+if (view === 'close') { const i = parseInt(params.get('i') || '0'); cam.position.set((i-3)*2.6 + 3.5, 1.6, 4.5); cam.lookAt((i-3)*2.6, 0.7, 0); }
+renderer.render(scene, cam);
+window.__ready = true;
+</script></body></html>

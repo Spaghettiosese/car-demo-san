@@ -1,0 +1,11 @@
+{
+  "name": "car-demo-san",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SAN DEMO - a browser driving sandbox tech demo (three.js, no build step)",
+  "type": "module",
+  "scripts": {
+    "start": "npx serve .",
+    "test": "node --import ./tests/register.js tests/physics.test.js"
+  }
+}
