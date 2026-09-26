@@ -10,6 +10,8 @@ uniform float uThreshold;
 varying vec2 vUv;
 void main() {
   vec3 c = texture2D(tDiffuse, vUv).rgb;
+  c = clamp(c, 0.0, 200.0);
+  if (c.r != c.r || c.g != c.g || c.b != c.b) c = vec3(0.0);
   float l = max(max(c.r, c.g), c.b);
   float k = smoothstep(uThreshold, uThreshold * 2.5, l);
   gl_FragColor = vec4(min(c * k, vec3(40.0)), 1.0);
@@ -45,6 +47,8 @@ void main() {
     col.g = texture2D(tScene, uv).g;
     col.b = texture2D(tScene, uv - d * uAberr).b;
   } else col = texture2D(tScene, uv).rgb;
+  col = clamp(col, 0.0, 200.0);
+  if (col.r != col.r || col.g != col.g || col.b != col.b) col = vec3(0.0);
   col += (texture2D(tBloom1, uv).rgb * 0.55 + texture2D(tBloom2, uv).rgb * 0.75) * uBloom;
   col *= uExposure;
   col = aces(col * 0.8);

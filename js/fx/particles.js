@@ -19,6 +19,7 @@ void main() {
 }`;
 const FRAG = /* glsl */ `
 uniform sampler2D map;
+uniform vec3 uLight;
 varying vec4 vColor;
 varying float vRot;
 #include <fog_pars_fragment>
@@ -27,7 +28,7 @@ void main() {
   float c = cos(vRot), s = sin(vRot);
   uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + 0.5;
   vec4 t = texture2D(map, uv);
-  gl_FragColor = vec4(vColor.rgb * t.rgb, vColor.a * t.a);
+  gl_FragColor = vec4(vColor.rgb * t.rgb * uLight, vColor.a * t.a);
   if (gl_FragColor.a < 0.004) discard;
   #include <fog_fragment>
 }`;
@@ -75,7 +76,7 @@ class Pool {
     g.setDrawRange(0, 0);
     this.geo = g;
     this.mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: texture }, uScale: { value: 400 } }]),
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: texture }, uScale: { value: 400 }, uLight: { value: new THREE.Color(1, 1, 1) } }]),
       vertexShader: VERT,
       fragmentShader: FRAG,
       transparent: true,
@@ -262,6 +263,11 @@ export class FX {
     this.shards = new Shards(scene);
     this.groundAt = null;
     this.quality = 1;
+  }
+
+  /** Smoke is lit by the ambient light level; glowing particles are not. */
+  setAmbient(level) {
+    this.smoke.mat.uniforms.uLight.value.setRGB(level + 0.03, level + 0.03, level + 0.05);
   }
 
   setScale(px) {

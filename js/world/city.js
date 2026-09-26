@@ -481,7 +481,7 @@ export class City {
     this.buildingMesh = bmesh;
     const shopMat = new THREE.MeshStandardMaterial({ map: shopTexture(), emissiveMap: shopTexture(), emissive: new THREE.Color(1, 0.95, 0.85), emissiveIntensity: 0.1, roughness: 0.4 });
     shopMat.map.wrapS = THREE.RepeatWrapping;
-    this.nightMats.push({ mat: shopMat, max: 1.1, min: 0.08 });
+    this.nightMats.push({ mat: shopMat, max: 0.45, min: 0.04 });
     const shopMesh = new THREE.Mesh(shops.build(), [shopMat]);
     shopMesh.receiveShadow = true;
     this.group.add(shopMesh);

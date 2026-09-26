@@ -11,6 +11,7 @@ import { DebrisSystem } from './fx/debris.js';
 import { Car } from './vehicle/car.js';
 import { DEFAULT_CONFIG, configForBody } from './vehicle/specs.js';
 import { paintLivery } from './vehicle/carBuilder.js';
+import { beamTexture } from './world/textures.js';
 import { CameraRig, CAMERA_MODES } from './camera.js';
 import { PlayerDriver } from './player.js';
 import { HUD } from './ui/hud.js';
@@ -118,6 +119,7 @@ export class Game {
     await tick();
 
     this.cam = new CameraRig(this.camera, this);
+    this.initCarLights();
     this.driver = new PlayerDriver(this);
     this.hud = new HUD(this);
     await this.initOptional(progress);
@@ -165,6 +167,100 @@ export class Game {
     const gps = await tryImport('./ai/gps.js');
     if (gps) this.gpsModule = gps;
     if (this.traffic) this.traffic.init();
+  }
+
+  /** A fixed pool of real lights (no shader recompiles): player headlights + police strobes. */
+  initCarLights() {
+    this.headlights = [0, 1].map(() => {
+      const l = new THREE.SpotLight(0xfff1d6, 0, 90, 0.42, 0.55, 1.4);
+      l.castShadow = false;
+      this.scene.add(l);
+      this.scene.add(l.target);
+      return l;
+    });
+    this.strobes = [new THREE.PointLight(0xff2020, 0, 40, 1.2), new THREE.PointLight(0x2050ff, 0, 40, 1.2)];
+    for (const l of this.strobes) this.scene.add(l);
+    // fake headlight pools for traffic at night
+    const beamMat = new THREE.MeshBasicMaterial({ map: beamTexture(), color: new THREE.Color(1, 0.92, 0.78), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8, opacity: 0.7 });
+    const bg = new THREE.PlaneGeometry(9, 22);
+    bg.rotateX(-Math.PI / 2);
+    bg.translate(0, 0, 11);
+    this.beams = new THREE.InstancedMesh(bg, beamMat, 64);
+    this.beams.count = 0;
+    this.beams.frustumCulled = false;
+    this.beams.renderOrder = 2;
+    this.scene.add(this.beams);
+  }
+
+  updateCarLights() {
+    const car = this.player.car;
+    const night = this.env.night;
+    const [L, R] = this.headlights;
+    if (car && car.electrics && car.sys.headlights === 2) {
+      const high = car.sys.high || car.sys.flash > 0;
+      const units = car.model.lights.head;
+      [L, R].forEach((l, i) => {
+        const u = units[i];
+        if (!u || u.broken) {
+          l.intensity = 0;
+          return;
+        }
+        car.body.toWorldPoint(_v.copy(u.mesh.position).add(u.group.position).sub(car.model.com).setZ(u.mesh.position.z + 0.15 - car.model.com.z), l.position);
+        const aim = _v2.set(u.side * 0.25, high ? 1.0 : 0.05, high ? 70 : 26).sub(car.model.com);
+        aim.x += u.mesh.position.x;
+        car.body.toWorldPoint(aim, l.target.position);
+        l.intensity = (high ? 900 : 420) * (0.35 + night * 0.65);
+        l.distance = high ? 140 : 75;
+        l.angle = high ? 0.36 : 0.5;
+        l.color.set(car.model.lights.headColor);
+      });
+    } else {
+      L.intensity = 0;
+      R.intensity = 0;
+    }
+    // police strobes: nearest cruiser with its siren on
+    let cop = null, bd = 90 * 90;
+    for (const c of this.cars) {
+      if (!c.police || !c.sirenOn || c.removed) continue;
+      const d = c.body.position.distanceToSquared(this.camera.position);
+      if (d < bd) {
+        bd = d;
+        cop = c;
+      }
+    }
+    const t = this.physics.time;
+    if (cop) {
+      const lb = cop.model.details.lightbar;
+      const p = cop.body.toWorldPoint(_v.copy(lb ? lb.group.position : new THREE.Vector3(0, 1.5, 0)).sub(cop.model.com), _v);
+      const ph = (t * 3.2) % 1;
+      this.strobes[0].position.copy(p).add(_v2.set(0, 1.6, 0));
+      this.strobes[1].position.copy(p).add(_v2.set(0, 1.6, 0));
+      const k = 14 * (0.3 + night * 0.7);
+      this.strobes[0].intensity = ph < 0.5 ? k : 0;
+      this.strobes[1].intensity = ph >= 0.5 ? k : 0;
+    } else this.strobes[0].intensity = this.strobes[1].intensity = 0;
+    // traffic beam pools
+    let n = 0;
+    if (night > 0.3) {
+      const m = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      const one = new THREE.Vector3(1, 1, 1);
+      for (const c of this.cars) {
+        if (n >= 64) break;
+        if (c === car || c.removed || c.sys.headlights !== 2 || !c.headlightOk(1) && !c.headlightOk(-1)) continue;
+        if (c.body.position.distanceToSquared(this.camera.position) > 140 * 140) continue;
+        const yaw = Math.atan2(c.body.R[2], c.body.R[8]);
+        q.setFromAxisAngle(_v2.set(0, 1, 0), yaw);
+        const fwd = _v.set(Math.sin(yaw), 0, Math.cos(yaw));
+        const pos = c.body.position.clone().addScaledVector(fwd, c.boundsMax.z);
+        pos.y = this.world.groundAt(pos.x, pos.z, pos.y, { y: 0 }).y + 0.02;
+        m.compose(pos, q, one);
+        this.beams.setMatrixAt(n++, m);
+      }
+    }
+    this.beams.count = n;
+    this.beams.instanceMatrix.needsUpdate = true;
+    this.beams.material.opacity = 0.55 * night;
   }
 
   resize() {
@@ -390,7 +486,9 @@ export class Game {
     this.city.setWetness(this.env.wetness);
     for (const c of this.cars) c.phys.wet = this.env.wetness;
     this.city.hillsMat.color.setRGB(0.32, 0.38, 0.25).multiplyScalar(0.25 + 0.75 * (1 - night));
+    this.fx.setAmbient(0.1 + 0.87 * (1 - night));
 
+    this.updateCarLights();
     // camera
     this.cam.lookBack = input.down('lookBack');
     if (this.player.mode === 'foot' && this.onFoot) this.onFoot.updateCamera(dt, input);
