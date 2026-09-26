@@ -136,12 +136,12 @@ export class DeformLattice {
       }
       if (crumple > 0) {
         const m = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (m > 0.01) {
+        if (m > 0.06) {
           // cheap per-vertex hash -> wrinkles grow with the size of the dent
           const h1 = Math.sin(v * 12.9898 + rest[v * 3] * 78.233) * 43758.5453;
           const h2 = Math.sin(v * 39.3468 + rest[v * 3 + 2] * 11.135) * 24634.6345;
           const h3 = Math.sin(v * 73.156 + rest[v * 3 + 1] * 52.235) * 12345.6789;
-          const k = crumple * Math.min(m, 0.4);
+          const k = crumple * Math.min(m - 0.06, 0.35);
           dx += (h1 - Math.floor(h1) - 0.5) * k;
           dy += (h2 - Math.floor(h2) - 0.5) * k;
           dz += (h3 - Math.floor(h3) - 0.5) * k;

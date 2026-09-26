@@ -276,7 +276,7 @@ export class Car {
     // lights
     for (const l of m.lights.all) {
       if (l.broken) continue;
-      if (l.rest.distanceTo(lp) < radius + 0.25 && dv > 3) {
+      if (l.rest.distanceTo(lp) < radius + 0.45 && dv > 2.5) {
         l.broken = true;
         l.mat.emissiveIntensity = 0;
         l.mat.color.multiplyScalar(0.35);

@@ -250,6 +250,11 @@ export class Game {
       if (kind === 'building' || kind === 'wall') this.fx.impactDust(p, Math.min(2, dv / 8));
       if (!(other && other.id < car.id)) this.audio?.impact?.(p, dv, kind, car);
     }
+    if (isPlayer && kind === 'wall' && this.city.crashWall && p.x > this.city.crashWall.x - 6 && dv > 4 && !this.wallMsgT) {
+      this.wallMsgT = true;
+      setTimeout(() => (this.wallMsgT = false), 2500);
+      this.hud.big(`${Math.round(this.prevPlayerKmh || dv * 3.6)} km/h`, `Crash test · Δv ${(dv * 3.6).toFixed(0)} km/h · ${(dv / 9.81 / 0.08).toFixed(0)} g peak (est.)`, 3.5);
+    }
     if (isPlayer) {
       this.cam.addShake(Math.min(1.2, dv * 0.045));
       if (dv > 6) this.hud.hurt(Math.min(0.9, dv / 25));
@@ -394,8 +399,10 @@ export class Game {
     if (this.player.mode === 'car') this.interior?.update(dt, input);
     this.audio?.update(dt);
     this.gpsUpdate(dt);
+    this.zones(dt);
     this.hud.update(dt);
     this.hurtFade(dt);
+    this.prevPlayerKmh = pc ? pc.speed * KMH : 0;
   }
 
   hurtFade(dt) {
@@ -653,9 +660,104 @@ export class Game {
   }
 
   render(dt) {
-    if (this.post && this.settings.bloom) this.post.render(dt, this);
-    else this.renderer.render(this.scene, this.camera);
-    this.interior?.renderMirrors?.(this.renderer);
+    const garage = this.state === 'garage' && this.garage;
+    const scene = garage ? this.garage.scene : this.scene;
+    const cam = garage ? this.garage.camera : this.camera;
+    if (this.post && this.settings.bloom) this.post.render(dt, this, scene, cam);
+    else this.renderer.render(scene, cam);
+    if (!garage && this.player.mode === 'car') this.interior?.renderMirrors?.(this.renderer);
+  }
+
+  // ------------------------------------------------------------ interaction zones & proving grounds
+  zones(dt) {
+    const car = this.player.car;
+    const input = this.input;
+    let prompt = null;
+    if (this.player.mode !== 'car' || !car) return;
+    const p = car.body.position;
+    const kmh = car.speed * KMH;
+    const city = this.city;
+    // customs shop
+    const gz = city.garageZone;
+    if (gz && p.x > gz.x0 && p.x < gz.x1 && p.z > gz.z0 && p.z < gz.z1 && car.speed < 1.5) {
+      prompt = '<kbd>Enter</kbd> San Demo Customs — repair & customize';
+      if (input.keyPressed('Enter')) {
+        car.repair();
+        car.phys.pt.fuel = 55;
+        this.garage?.open('shop');
+        return;
+      }
+    }
+    // fuel pumps
+    if (city.pumps && car.speed < 1) {
+      for (const pump of city.pumps) {
+        if (Math.hypot(p.x - pump.x, p.z - pump.z) < 3.8) {
+          const pt = car.phys.pt;
+          const ev = pt.ev;
+          prompt = pt.fuel >= 54.9 ? (ev ? 'Battery full' : 'Tank full') : `Hold <kbd>Enter</kbd> to ${ev ? 'charge' : 'refuel'} (${pt.fuel.toFixed(1)} / 55 L)`;
+          if (input.key('Enter') && pt.fuel < 55) {
+            if (pt.running && !ev) {
+              prompt = 'Turn the engine off first (<kbd>I</kbd>)';
+            } else {
+              pt.fuel = Math.min(55, pt.fuel + dt * 9);
+            }
+          }
+          break;
+        }
+      }
+    }
+    // drag strip timing
+    const ds = city.dragStrip;
+    const drag = (this.drag ||= { state: 'idle', t: 0 });
+    const onStrip = ds && Math.abs(p.x - ds.x) < 7 && p.z > ds.start - 12 && p.z < ds.quarter + 30;
+    if (onStrip) {
+      if (drag.state === 'idle' && p.z < ds.start && p.z > ds.start - 12 && car.speed < 0.5) {
+        drag.state = 'armed';
+      }
+      if (drag.state === 'armed') {
+        prompt = 'Drag strip: launch when ready — quarter mile';
+        if (p.z >= ds.start) {
+          drag.state = 'run';
+          drag.t = 0;
+          drag.split = null;
+        }
+      } else if (drag.state === 'run') {
+        drag.t += dt;
+        if (!drag.split && kmh >= 100) drag.split = drag.t;
+        this.timerBox(`⏱ ${drag.t.toFixed(2)} s · ${Math.round(kmh)} km/h${drag.split ? ` · 0-100 ${drag.split.toFixed(2)} s` : ''}`);
+        if (p.z >= ds.quarter) {
+          drag.state = 'idle';
+          const best = !this.stats.bestDrag || drag.t < this.stats.bestDrag;
+          if (best) this.stats.bestDrag = drag.t;
+          this.hud.big(`${drag.t.toFixed(2)} s`, `Quarter mile · trap ${Math.round(kmh)} km/h${drag.split ? ` · 0-100 in ${drag.split.toFixed(2)} s` : ''}${best ? ' · NEW BEST' : ''}`, 4);
+          setTimeout(() => this.timerBox(null), 4000);
+        }
+      }
+    } else if (drag.state !== 'idle') {
+      drag.state = 'idle';
+      this.timerBox(null);
+    }
+    // skid pad lateral g
+    const sp = city.skidpad;
+    if (sp) {
+      const d = Math.hypot(p.x - sp.x, p.z - sp.z);
+      if (Math.abs(d - sp.r) < 10 && car.speed > 5) {
+        this.skidT = 1;
+        this.timerBox(`Skid pad · lateral ${(Math.abs(car.gforce.x) / 9.81).toFixed(2)} g · ${Math.round(kmh)} km/h`);
+      } else if (this.skidT > 0 && (this.skidT -= dt) <= 0) this.timerBox(null);
+    }
+    this.lastKmh = kmh;
+    this.hud.prompt(prompt);
+  }
+
+  timerBox(text) {
+    const el = document.getElementById('timer-box');
+    if (!text) {
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = text;
   }
 }
 

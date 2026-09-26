@@ -137,6 +137,16 @@ export class Powertrain {
       this.lastUp = true;
       return;
     }
+    // sudden stop (crash, hard braking): drop straight to a sensible gear
+    if (this.gear > 2 && groundRpm < s.idle * 0.9) {
+      let g = this.gear;
+      while (g > 1 && Math.abs(groundOmega * this.ratio(g - 1)) * RPM < s.redline * 0.5) g--;
+      if (g < this.gear - 1) {
+        this.shiftTo(g);
+        this.lastUp = false;
+        return;
+      }
+    }
     if (this.gear > 1) {
       const lower = Math.abs(groundOmega * this.ratio(this.gear - 1)) * RPM;
       const downAt = lerp(s.idle * 1.6, s.redline * 0.55, throttle * throttle);

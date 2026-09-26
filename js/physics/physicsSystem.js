@@ -33,6 +33,7 @@ export class PhysicsSystem {
     const n = Math.max(1, Math.ceil(dt / this.maxSub - 1e-6));
     const h = dt / n;
     const active = cars.filter((c) => c.physicsActive && !c.removed);
+    for (const c of active) if (c.body.sleeping && c.phys.input.throttle > 0.01) c.body.sleeping = false;
     for (let s = 0; s < n; s++) {
       for (const c of active) {
         if (c.body.sleeping) continue;
@@ -54,7 +55,8 @@ export class PhysicsSystem {
   }
 
   sleepCheck(c, h) {
-    if (c.isPlayer || c.controller?.keepAwake) return;
+    // only driverless cars (parked, abandoned) may sleep
+    if (c.isPlayer || (c.controller && c.controller.state !== 'wrecked')) return;
     const b = c.body;
     const inp = c.phys.input;
     if (b.velocity.lengthSq() < 0.01 && b.angularVelocity.lengthSq() < 0.01 && inp.throttle < 0.01 && c.phys.grounded >= 3) {

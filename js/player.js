@@ -90,6 +90,6 @@ export class PlayerDriver {
     inp.brake = brk;
     inp.handbrake = input.down('handbrake') ? 1 : 0;
     // hold the car when stopped with the engine off
-    car.phys.parkBrake = !pt.running && v < 0.5 && thr < 0.05;
+    car.phys.parkBrake = (!pt.running && v < 0.5 && thr < 0.05) || !!car.parkLever;
   }
 }

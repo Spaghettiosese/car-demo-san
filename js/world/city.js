@@ -281,14 +281,17 @@ export class City {
   // ------------------------------------------------------------ ground
   buildGround() {
     const world = this.world;
-    const grass = grassTexture().clone();
-    grass.needsUpdate = true;
-    grass.repeat.set(600, 600);
-    grass.wrapS = grass.wrapT = THREE.RepeatWrapping;
-    const gmat = new THREE.MeshStandardMaterial({ map: grass, roughness: 1, color: 0x9aa58a });
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), gmat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.02;
+    // grass everywhere except under the paved city and proving grounds (no overlapping planes)
+    const gmat = new THREE.MeshStandardMaterial({ map: grassTexture(), roughness: 1, color: 0x9aa58a });
+    const gb = new MeshBuilder(1);
+    const F = 3000, H = CITY_HALF;
+    gb.flat(-F, -F, -H, F, 0, 5);
+    gb.flat(PG.x1, -F, F, F, 0, 5);
+    gb.flat(-H, H, H, F, 0, 5);
+    gb.flat(-H, -F, H, -H, 0, 5);
+    gb.flat(H, PG.z1, PG.x1, F, 0, 5);
+    gb.flat(H, -F, PG.x1, PG.z0, 0, 5);
+    const ground = new THREE.Mesh(gb.build(), gmat);
     ground.receiveShadow = true;
     this.group.add(ground);
     world.baseMaterial = (x, z) => {
