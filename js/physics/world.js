@@ -4,10 +4,13 @@ import * as THREE from 'three';
 export const MATERIALS = {
   asphalt: { id: 0, name: 'asphalt', grip: 1.0, rough: 0.0, drag: 0.0, sound: 'road', dust: null },
   concrete: { id: 1, name: 'concrete', grip: 0.95, rough: 0.002, drag: 0.0, sound: 'road', dust: null },
-  grass: { id: 2, name: 'grass', grip: 0.62, rough: 0.012, drag: 0.012, sound: 'grass', dust: [0.35, 0.42, 0.22] },
-  dirt: { id: 3, name: 'dirt', grip: 0.7, rough: 0.02, drag: 0.018, sound: 'dirt', dust: [0.55, 0.45, 0.32] },
+  grass: { id: 2, name: 'grass', grip: 0.62, rough: 0.012, drag: 0.012, sound: 'grass', dust: [0.35, 0.42, 0.22], loose: true },
+  dirt: { id: 3, name: 'dirt', grip: 0.7, rough: 0.02, drag: 0.018, sound: 'dirt', dust: [0.55, 0.45, 0.32], loose: true },
   metal: { id: 4, name: 'metal', grip: 0.85, rough: 0.0, drag: 0.0, sound: 'metal', dust: null },
   wood: { id: 5, name: 'wood', grip: 0.8, rough: 0.004, drag: 0.004, sound: 'wood', dust: null },
+  rock: { id: 6, name: 'rock', grip: 0.88, rough: 0.018, drag: 0.004, sound: 'road', dust: null },
+  sand: { id: 7, name: 'sand', grip: 0.55, rough: 0.012, drag: 0.035, sound: 'dirt', dust: [0.8, 0.72, 0.55], loose: true },
+  gravel: { id: 8, name: 'gravel', grip: 0.72, rough: 0.014, drag: 0.012, sound: 'dirt', dust: [0.62, 0.58, 0.5], loose: true },
 };
 
 const CELL = 16;
@@ -122,9 +125,18 @@ export class StaticWorld {
    * Fills `out` with y, normal and material.
    */
   groundAt(x, z, yRef, out, step = 0.05) {
-    let y = this.baseHeight;
-    let mat = this.baseMaterial(x, z);
-    let nx = 0, ny = 1, nz = 0;
+    let y, mat, nx = 0, ny = 1, nz = 0;
+    if (this.terrain) {
+      this.terrain.sample(x, z, _t);
+      y = _t.y;
+      mat = _t.mat;
+      nx = _t.nx;
+      ny = _t.ny;
+      nz = _t.nz;
+    } else {
+      y = this.baseHeight;
+      mat = this.baseMaterial(x, z);
+    }
     const c = this._cell(Math.floor(x / CELL), Math.floor(z / CELL), false);
     const lim = yRef + step;
     if (c) {
@@ -232,6 +244,7 @@ export class StaticWorld {
 }
 
 const _rayBoxes = [];
+const _t = { y: 0, nx: 0, ny: 1, nz: 0, mat: null };
 const _o = new THREE.Vector3();
 const _d = new THREE.Vector3();
 

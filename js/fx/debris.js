@@ -38,10 +38,12 @@ export class DebrisSystem {
       friction: opts.friction ?? 0.6,
       onGround: false,
       lastHit: 0,
+      persistent: !!opts.persistent,
     };
     this.items.push(item);
-    if (this.items.length > this.max) {
-      const old = this.items.shift();
+    if (this.items.filter((i) => !i.persistent).length > this.max) {
+      const k = this.items.findIndex((i) => !i.persistent);
+      const old = this.items.splice(k, 1)[0];
       this.removeItem(old);
     }
     return item;
@@ -146,6 +148,17 @@ export class DebrisSystem {
         const b = it.body;
         if (b.sleeping) continue;
         b.integrateVelocity(h, GRAV);
+        // floating junk: buoyant and draggy in the sea
+        const T = this.world.terrain;
+        if (T && b.position.z > 380) {
+          const wy = T.waterAt(b.position.x, b.position.z);
+          if (b.position.y < wy) {
+            const depth = Math.min(1, (wy - b.position.y) / Math.max(0.2, it.radius));
+            b.velocity.y += 9.81 * (it.kind === 'wheel' || it.mat === 'wood' ? 1.6 : 0.7) * depth * h;
+            b.velocity.multiplyScalar(1 - 1.8 * h);
+            b.angularVelocity.multiplyScalar(1 - 1.5 * h);
+          }
+        }
         this.collideWorld(it, h);
         b.integratePosition(h);
         if (b.velocity.lengthSq() < 0.004 && b.angularVelocity.lengthSq() < 0.01 && it.onGround) {

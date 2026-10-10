@@ -827,7 +827,7 @@ export class AudioEngine {
       let squeal = 0, rough = 0, bumps = 0;
       for (const w of car.phys.wheels) {
         if (!w.contact) continue;
-        const loose = w.mat && (w.mat.name === 'grass' || w.mat.name === 'dirt');
+        const loose = w.mat && w.mat.loose;
         const sq = clamp((w.slip - 1.0) * 0.6, 0, 1) * clamp((w.slideVel - 1.5) / 6, 0, 1);
         if (loose) rough = Math.max(rough, sq + car.speed / 30);
         else squeal = Math.max(squeal, sq);

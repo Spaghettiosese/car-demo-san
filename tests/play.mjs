@@ -34,7 +34,7 @@ for (const step of script) {
   if (step.press) await page.keyboard.press(step.press);
   if (step.click) await page.mouse.click(step.click[0], step.click[1]);
   if (step.eval) { try { const r = await page.evaluate(step.eval); if (r !== undefined) logs.push(`[eval] ${JSON.stringify(r)}`); } catch (e) { logs.push('[eval error] ' + e.message); } }
-  if (step.shot) await page.screenshot({ path: `${prefix}_${step.shot}.png` });
+  if (step.shot) await page.screenshot({ path: `${prefix}_${step.shot}.png`, timeout: 180000 });
 }
 console.log(logs.join('\n'));
 await browser.close();

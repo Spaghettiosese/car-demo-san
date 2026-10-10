@@ -296,11 +296,13 @@ export class HUD {
   // ------------------------------------------------------------ minimap
   buildMapCache() {
     // static map image covering the whole playable area
-    const S = 1024;
+    const S = 2048;
     const c = document.createElement('canvas');
     c.width = c.height = S;
     const ctx = c.getContext('2d');
-    const ext = { x0: -CITY_HALF - 60, x1: PG.x1 + 20, z0: -CITY_HALF - 200, z1: CITY_HALF + 200 };
+    const T = this.game.terrain;
+    const half = T ? T.half : 1000;
+    const ext = T ? { x0: -half, x1: half, z0: -half, z1: half } : { x0: -CITY_HALF - 60, x1: PG.x1 + 20, z0: -CITY_HALF - 200, z1: CITY_HALF + 200 };
     const size = Math.max(ext.x1 - ext.x0, ext.z1 - ext.z0);
     ext.x1 = ext.x0 + size;
     ext.z1 = ext.z0 + size;
@@ -310,6 +312,44 @@ export class HUD {
     const X = (x) => (x - ext.x0) * sc, Z = (z) => (z - ext.z0) * sc;
     ctx.fillStyle = '#1d2a1c';
     ctx.fillRect(0, 0, S, S);
+    if (T) {
+      // shaded relief
+      const R = 512, img = ctx.createImageData(R, R);
+      const st = size / R;
+      for (let j = 0; j < R; j++)
+        for (let i = 0; i < R; i++) {
+          const x = ext.x0 + (i + 0.5) * st, z = ext.z0 + (j + 0.5) * st;
+          const h = T.rawHeight(x, z);
+          const shade = clamp(1 + (T.rawHeight(x - st, z - st) - h) * 0.06, 0.55, 1.4);
+          let r, g, b;
+          if (h < T.seaLevel) { const d = clamp((T.seaLevel - h) / 8, 0, 1); r = 22 - d * 8; g = 58 - d * 18; b = 78 - d * 18; }
+          else if (T.isSand(x, z)) { r = 120; g = 108; b = 80; }
+          else { const k = clamp(h / 200, 0, 1); r = 30 + k * 50; g = 46 + k * 26; b = 28 + k * 30; }
+          const o = (j * R + i) * 4;
+          img.data[o] = r * shade; img.data[o + 1] = g * shade; img.data[o + 2] = b * shade; img.data[o + 3] = 255;
+        }
+      const tmp = document.createElement('canvas');
+      tmp.width = tmp.height = R;
+      tmp.getContext('2d').putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(tmp, 0, 0, S, S);
+      // country roads
+      ctx.lineJoin = ctx.lineCap = 'round';
+      for (const r of T.roads) {
+        ctx.strokeStyle = '#6b7079';
+        ctx.lineWidth = Math.max(2, r.hw * 2 * sc);
+        ctx.beginPath();
+        r.pts.forEach((p, i) => (i ? ctx.lineTo(X(p.x), Z(p.z)) : ctx.moveTo(X(p.x), Z(p.z))));
+        ctx.stroke();
+      }
+      if (T.lookout) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('DEMO PEAK', X(T.lookout.pos.x), Z(T.lookout.pos.z) + 18);
+      }
+      this.extraMapLayers?.(ctx, X, Z, sc);
+    }
     const city = this.game.city;
     // blocks
     for (const b of city.blocks) {

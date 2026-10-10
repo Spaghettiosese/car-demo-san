@@ -1,0 +1,373 @@
+# San Demo v2: 350 new features
+
+This is the checklist of features added in the v2 remake, on top of everything v1 already had. An item is ticked only when it works in the game.
+
+## A. Cockpit and car systems (1–60)
+- [ ] F001 EV start: hold brake and press START (or the key), READY lamp on the cluster
+- [ ] F002 EV battery that drains with use; state of charge and range on the cluster
+- [ ] F003 EV regenerative braking with adjustable levels (0–3)
+- [ ] F004 EV pedestrian-warning hum at low speed
+- [ ] F005 EV chargers at the Fuel Stop (charge over time, paid in career)
+- [ ] F006 Clutch pedal input (key and gamepad) for manual cars
+- [ ] F007 Direct gear selection keys (1–6, R) for the manual gearbox
+- [ ] F008 Stalling from a bad clutch launch in manual
+- [ ] F009 Gear grinding when you shift without the clutch (realistic clutch mode)
+- [ ] F010 Money-shift over-rev damages the engine
+- [ ] F011 Third pedal appears and disappears when the gearbox changes
+- [ ] F012 Clicking the gear lever in manual shifts gears instead of switching to auto
+- [ ] F013 Launch control (hold brake and throttle, holds launch rpm)
+- [ ] F014 Drive modes Eco / Normal / Sport (throttle map and shift points)
+- [ ] F015 ESC stability control that brakes single wheels
+- [ ] F016 TCS-OFF button in the cockpit
+- [ ] F017 Cruise control (set / resume / cancel; cancels on brake)
+- [ ] F018 Speed limiter
+- [ ] F019 Flash-to-pass (tap the high-beam key)
+- [ ] F020 Front and rear fog lights
+- [ ] F021 AUTO headlight position (light sensor)
+- [ ] F022 AUTO wiper position (rain sensor)
+- [ ] F023 Climate fan knob that clears the fog faster
+- [ ] F024 Climate temperature knob (cold air fogs the glass in the rain)
+- [ ] F025 A/C button that loads the engine at idle
+- [ ] F026 Rear-window defrost button
+- [ ] F027 Trip computer: instant and average consumption, range
+- [ ] F028 Trip A/B reset by clicking the cluster
+- [ ] F029 Low-fuel chime and lamp, with a lagging fuel needle
+- [ ] F030 Battery and alternator simulation (state of charge, voltage)
+- [ ] F031 A flat battery from lights or radio left on with the engine off: slow crank, then no crank
+- [ ] F032 Jump-start from another car on foot
+- [ ] F033 Fuel-pump prime sound at ON
+- [ ] F034 Engine floods after long cranking
+- [ ] F035 Cold start: fast idle and warm-up
+- [ ] F036 Manual choke on the classic car
+- [ ] F037 Seat height and fore-aft adjustment, saved per car
+- [ ] F038 Look left / right keys in the cockpit
+- [ ] F039 Head bump from road impacts
+- [ ] F040 RPM-tuned cockpit vibration
+- [ ] F041 Lean out of the open window to look back
+- [ ] F042 Side mirrors with their own view angles
+- [ ] F043 Mirror adjustment
+- [ ] F044 Fold-mirrors button
+- [ ] F045 Hood release lever
+- [ ] F046 Trunk release
+- [ ] F047 Fuel door button
+- [ ] F048 Horn sticks on after heavy front damage
+- [ ] F049 Dome light comes on automatically when the door opens
+- [ ] F050 Sun glare when facing a low sun; the sun visor blocks it
+- [ ] F051 Glovebox registration used in police traffic stops
+- [ ] F052 Phone mount on the dashboard showing the phone screen
+- [ ] F053 Steering self-centring and weight from tyre aligning torque
+- [ ] F054 Gamepad rumble (slip, ABS, curbs, impacts)
+- [ ] F055 Steering wheel device support with rotation calibration
+- [ ] F056 Hazard "thank you" double blink calms the car behind
+- [ ] F057 Electronic parking brake button on modern cars
+- [ ] F058 Key fob: remote lock and unlock with a blink and a chirp
+- [ ] F059 Car alarm when a parked car is bumped or broken into
+- [ ] F060 Cooling fan runs on after shutdown, with exhaust tick
+
+## B. Mechanical, physics and damage (61–100)
+- [ ] F061 Tyre temperature affects grip
+- [ ] F062 Tyre wear from distance and slip
+- [ ] F063 Tyre pressure setting (grip, rolling resistance, wear)
+- [ ] F064 Brake fade from heat
+- [ ] F065 Big brake kit raises brake torque and fade resistance
+- [ ] F066 Camber affects grip
+- [ ] F067 Toe affects straight-line stability and turn-in
+- [ ] F068 Distinct gear ratios per car
+- [ ] F069 Final-drive ratio tuning
+- [ ] F070 Fuel tank size per car
+- [ ] F071 Oil level and oil leaks from damage; low oil seizes the engine
+- [ ] F072 Coolant leaks lead to overheating
+- [ ] F073 Engine-bay fire after severe front damage
+- [ ] F074 A fuel leak plus sparks starts a fire
+- [ ] F075 Fire extinguisher (on foot)
+- [ ] F076 A burning car can explode
+- [ ] F077 Slippery oil and coolant puddles
+- [ ] F078 Transmission damage (lost gears)
+- [ ] F079 Steering rack damage pulls the car to one side
+- [ ] F080 Electrical damage: lights flicker, the dash goes dead
+- [ ] F081 Headlights misaim after front damage
+- [ ] F082 Exhaust drags after an underbody hit, throwing sparks
+- [ ] F083 Metal fatigue from repeated hard landings
+- [ ] F084 Driver health and injury from crashes
+- [ ] F085 Unbelted injuries: blur, tinnitus, ejection through a broken windshield
+- [ ] F086 Aquaplaning in standing water
+- [ ] F087 Wind gusts push tall vehicles
+- [ ] F088 Water physics: buoyancy, drag, sinking
+- [ ] F089 Hydrolocked engine after driving into deep water
+- [ ] F090 Electrics short out in water
+- [ ] F091 Water fills the cabin (cockpit overlay)
+- [ ] F092 Breakable small trees in the city
+- [ ] F093 Breakable traffic signals
+- [ ] F094 Breakable bollards
+- [ ] F095 Breakable shop windows
+- [ ] F096 Pushable harbor crates and pallets (physics debris)
+- [ ] F097 New surfaces: rock, sand and gravel
+- [ ] F098 Sand: deep drag, sinking feel and sand plumes
+- [ ] F099 Hill-start assist
+- [ ] F100 Tyre blowouts from overheating or wear
+
+## C. Customization and garage (101–130)
+- [ ] F101 A garage that holds several cars
+- [ ] F102 Named setups saved per car
+- [ ] F103 Dyno graph (torque and power) in the garage
+- [ ] F104 Gear ratio tuning
+- [ ] F105 Tyre pressure tuning
+- [ ] F106 Camber and toe tuning
+- [ ] F107 LSD preload tuning
+- [ ] F108 Boost controller
+- [ ] F109 Front bumper styles (body kit)
+- [ ] F110 Hood scoop
+- [ ] F111 Fender flares / wide body
+- [ ] F112 Roll cage (stiffens the cabin structure)
+- [ ] F113 Steering wheel styles
+- [ ] F114 Bucket seats
+- [ ] F115 Gauge style: analog or digital
+- [ ] F116 Interior colour
+- [ ] F117 Racing number decals
+- [ ] F118 Two-tone paint
+- [ ] F119 Smoked tail lights
+- [ ] F120 Wheel offset / spacers
+- [ ] F121 Tyre width option
+- [ ] F122 Exhaust tip styles
+- [ ] F123 Underglow animation modes
+- [ ] F124 Brake caliper colour
+- [ ] F125 Dirt that builds up on the car; washing it off
+- [ ] F126 Car wash in the city
+- [ ] F127 Live price preview in the paint shop
+- [ ] F128 Sell cars at the dealership
+- [ ] F129 Test drives at the dealership
+- [ ] F130 Mileage and condition shown in the garage
+
+## D. Career and economy (131–160)
+- [ ] F131 Career mode with autosave
+- [ ] F132 Free Roam sandbox mode
+- [ ] F133 Money, XP and levels
+- [ ] F134 Level-up rewards and unlocks
+- [ ] F135 San Demo Motors dealership
+- [ ] F136 Paid repairs, per system
+- [ ] F137 Paid fuel per litre
+- [ ] F138 Police fines charged
+- [ ] F139 Impound fee when busted (no free repair)
+- [ ] F140 Tow service
+- [ ] F141 Insurance (premium; pays part of repairs)
+- [ ] F142 Car depreciation with mileage
+- [ ] F143 Bank statement on the phone
+- [ ] F144 Car loans
+- [ ] F145 Achievements with toasts
+- [ ] F146 Career stats page
+- [ ] F147 Bronze / silver / gold medals per event
+- [ ] F148 Local leaderboards per event
+- [ ] F149 Driving licence points; too many offences suspend it
+- [ ] F150 A suspended licence has consequences (higher heat, no jobs)
+- [ ] F151 Roadside mechanic call
+- [ ] F152 Oil service intervals
+- [ ] F153 Tyre shop: replace worn tyres
+- [ ] F154 Three career save slots
+- [ ] F155 v1 car and settings migrated into the career
+- [ ] F156 Autosave indicator
+- [ ] F157 Career intro tutorial
+- [ ] F158 Contextual hints
+- [ ] F159 Map points of interest with a legend
+- [ ] F160 Fast travel to the garage (taxi fee)
+
+## E. Activities (161–200)
+- [ ] F161 Activity framework: markers, start card, countdown, objective panel, results
+- [ ] F162 Taxi jobs with passenger comfort rating and tips
+- [ ] F163 Courier deliveries against the clock
+- [ ] F164 Fragile Freight (g-force-limited cargo)
+- [ ] F165 Downtown Sprint (checkpoint race against AI)
+- [ ] F166 Canyon Run (point-to-point race against AI)
+- [ ] F167 Coast Highway time trial
+- [ ] F168 Harbor Circuit lap race
+- [ ] F169 Quarter Mile Duel against AI
+- [ ] F170 Drift Trial (scored)
+- [ ] F171 Demolition Derby arena
+- [ ] F172 Cop Duty: drive a cruiser and stop fleeing suspects
+- [ ] F173 Heat Run: survive the police for a set time
+- [ ] F174 Valet Parking: park precisely against the clock
+- [ ] F175 Crash Test sandbox tool (set the speed, auto-drive into the wall, get a report)
+- [ ] F176 Eight speed traps with records
+- [ ] F177 Speed cameras that fine you
+- [ ] F178 Eight stunt jumps with distance records
+- [ ] F179 Free-roam drift scoring with combos
+- [ ] F180 Near-miss scoring
+- [ ] F181 Airtime scoring
+- [ ] F182 Red-light street races against boy-racers
+- [ ] F183 Canyon hill-climb time attack
+- [ ] F184 Eco challenge (fuel-efficient drive)
+- [ ] F185 Ambulance run (deliver a patient smoothly)
+- [ ] F186 Forest rally stage on a dirt trail
+- [ ] F187 Quick event restart key
+- [ ] F188 Ghost car of your best run
+- [ ] F189 Race position and lap counter on the HUD
+- [ ] F190 Countdown lights and false-start detection
+- [ ] F191 Rewards scaled by difficulty
+- [ ] F192 AI difficulty setting
+- [ ] F193 Named rival drivers with personalities
+- [ ] F194 Wager races
+- [ ] F195 25 hubcap collectibles
+- [ ] F196 Photo challenges at scenic spots
+- [ ] F197 Daily challenge (seeded by date)
+- [ ] F198 Slalom challenge at the Proving Grounds
+- [ ] F199 Pursuit recap screen after a chase
+- [ ] F200 Event markers on the map with a GPS route
+
+## F. World and environment (201–240)
+- [ ] F201 Terrain with hills and mountains
+- [ ] F202 Canyon road with hairpins
+- [ ] F203 Coast highway loop
+- [ ] F204 Collidable guardrails
+- [ ] F205 Demo Peak lookout
+- [ ] F206 Beach with a sand surface
+- [ ] F207 Sea with waves and surf foam
+- [ ] F208 Harbor district: warehouses, containers, cranes, quay
+- [ ] F209 Pier on the beach
+- [ ] F210 Lighthouse with a rotating beam
+- [ ] F211 Forests
+- [ ] F212 Rocks and boulders
+- [ ] F213 Distance LOD for terrain and cars
+- [ ] F214 Dirt rally trail in the hills
+- [ ] F215 Four-way stop intersections
+- [ ] F216 Speed bumps
+- [ ] F217 Potholes and manhole covers
+- [ ] F218 A one-way street
+- [ ] F219 Roundabout at the harbor entrance
+- [ ] F220 EV chargers at the gas station (world props)
+- [ ] F221 Weather that changes over time
+- [ ] F222 Puddles in the rain
+- [ ] F223 Wind (swaying trees, flags)
+- [ ] F224 Snow weather with low grip
+- [ ] F225 A rainbow after rain
+- [ ] F226 Shooting stars at night
+- [ ] F227 Street lights switch on one by one at dusk
+- [ ] F228 Animated billboards
+- [ ] F229 Ambient sound by district (park, downtown, beach, harbor)
+- [ ] F230 Seagulls at the beach and harbor
+- [ ] F231 Bird flocks over the park
+- [ ] F232 Boats moving on the sea
+- [ ] F233 Ambient plane and helicopter flyovers
+- [ ] F234 Pedestrians walking the sidewalks
+- [ ] F235 Pedestrians cross at crosswalks with the signals
+- [ ] F236 Pedestrians dodge cars and react to the horn
+- [ ] F237 Pedestrians can be knocked over (and the police care)
+- [ ] F238 Pedestrian variety: joggers, dog walkers
+- [ ] F239 Parking-lot cars with alarms
+- [ ] F240 Fireworks over the harbor at night
+
+## G. Traffic and police AI (241–275)
+- [ ] F241 Traffic yields to sirens
+- [ ] F242 Ambulance responds to big crashes
+- [ ] F243 Tow truck clears wrecks
+- [ ] F244 Fire truck responds to car fires
+- [ ] F245 Driver personalities: learner, elderly, boy-racer, drunk at night
+- [ ] F246 City buses with stops
+- [ ] F247 Delivery vans that double-park
+- [ ] F248 NPC-vs-NPC crashes and arguments
+- [ ] F249 NPCs honk at each other
+- [ ] F250 Voiced NPC lines
+- [ ] F251 Road-rage brake checking
+- [ ] F252 Road-rage cut-offs
+- [ ] F253 Ragers get out to confront you
+- [ ] F254 An apology (hazard flash) calms ragers
+- [ ] F255 Parked cars pull out into traffic
+- [ ] F256 A carjacked driver chases you on foot
+- [ ] F257 NPC engine sound matches their engine
+- [ ] F258 AI handles four-way stops (first come, first served)
+- [ ] F259 Rush-hour traffic density by time of day
+- [ ] F260 Thinner traffic at night
+- [ ] F261 Interactive traffic stop (pull over, window, registration)
+- [ ] F262 New offences: no seatbelt, no headlights at night, running a stop sign, wrong way
+- [ ] F263 Police helicopter with a spotlight at 4+ stars
+- [ ] F264 Police scanner radio station
+- [ ] F265 Officers get out at roadblocks and busts
+- [ ] F266 Police dispatch callouts on the HUD
+- [ ] F267 Speed camera flash
+- [ ] F268 Respraying your car lowers your heat
+- [ ] F269 Hide in garages to cool off
+- [ ] F270 Unmarked police cars
+- [ ] F271 Cash bonus for escaping pursuits in career
+- [ ] F272 Pay fines from the phone
+- [ ] F273 Racing AI rubber-band difficulty
+- [ ] F274 Broken-down AI turns on its hazard lights
+- [ ] F275 Broken-down cars on the roadside
+
+## H. Audio (276–295)
+- [ ] F276 Brake squeal
+- [ ] F277 Suspension clunks over big bumps
+- [ ] F278 Damage rattles
+- [ ] F279 Engine knock when the engine is damaged
+- [ ] F280 Radiator cooling fan
+- [ ] F281 Exhaust tick after shutdown
+- [ ] F282 Doppler on passing cars and sirens
+- [ ] F283 Distinct gravel and sand tyre sounds
+- [ ] F284 Wind gust audio
+- [ ] F285 Waves and sea ambience
+- [ ] F286 Seagulls and birdsong
+- [ ] F287 Gear grind sound
+- [ ] F288 Each car has its own indicator relay sound
+- [ ] F289 Seatbelt click and door-open chime
+- [ ] F290 Static between radio stations while tuning
+- [ ] F291 Radio volume knob
+- [ ] F292 Police scanner chatter
+- [ ] F293 Spoken GPS turn-by-turn prompts
+- [ ] F294 Rain on the roof, heard in the cockpit
+- [ ] F295 Thunder arrives after the lightning, delayed by its distance
+
+## I. Camera, photo and replay (296–315)
+- [ ] F296 Replay system (ring buffer of the last 30 s)
+- [ ] F297 Automatic crash replay
+- [ ] F298 Replay scrubbing and playback speed
+- [ ] F299 Replay cameras: chase, trackside, free
+- [ ] F300 Photo mode pauses the sim and blocks driving input
+- [ ] F301 Photo mode hides the HUD
+- [ ] F302 Photo mode exposure and colour filters
+- [ ] F303 Photo mode vignette and grain
+- [ ] F304 Save a screenshot as PNG
+- [ ] F305 Helmet cam (cockpit with head tilt into corners)
+- [ ] F306 Drone camera
+- [ ] F307 Wheel cam
+- [ ] F308 Helicopter cam during pursuits
+- [ ] F309 Cockpit FOV adjustment
+- [ ] F310 Camera shake scaled by impact strength
+- [ ] F311 Speed-dependent FOV
+- [ ] F312 Rear-view picture-in-picture in the chase cam
+- [ ] F313 Cinematic camera with automatic cuts
+- [ ] F314 Look back in every camera
+- [ ] F315 Photo mode time-of-day slider
+
+## J. UI, HUD, settings and sandbox (316–350)
+- [ ] F316 New main menu with Career and Free Roam
+- [ ] F317 Phone (Tab): map, jobs, contacts, bank, messages, settings
+- [ ] F318 Text messages from contacts with job offers
+- [ ] F319 Key rebinding
+- [ ] F320 Assist presets: Arcade, Realistic, Sim
+- [ ] F321 Mouse sensitivity and invert Y that actually work
+- [ ] F322 Distance units on the HUD and phone
+- [ ] F323 Colour-blind-friendly HUD palette
+- [ ] F324 HUD scale
+- [ ] F325 Subtitles for radio and speech
+- [ ] F326 Big map with zoom and pan
+- [ ] F327 Map legend and filters
+- [ ] F328 GPS route to any point of interest
+- [ ] F329 Turn-by-turn arrow on the HUD
+- [ ] F330 Speed-limit sign on the HUD
+- [ ] F331 Speedometer styles
+- [ ] F332 Telemetry throttle and brake trace graph
+- [ ] F333 Detailed damage report panel
+- [ ] F334 Notification feed
+- [ ] F335 Step-by-step tutorial
+- [ ] F336 Loading-screen tips
+- [ ] F337 Pause menu: resume, restart or quit the event
+- [ ] F338 Frame-time graph overlay
+- [ ] F339 Dynamic resolution scaling
+- [ ] F340 View distance setting
+- [ ] F341 Tree density setting
+- [ ] F342 Reduce camera shake (accessibility)
+- [ ] F343 Toggle-or-hold control options (accessibility)
+- [ ] F344 About and credits screen
+- [ ] F345 Sandbox: spawn AI with a chosen behaviour (racer, derby, flee, rage)
+- [ ] F346 Sandbox: save and load scenarios
+- [ ] F347 Sandbox: black-ice patches
+- [ ] F348 Sandbox: traffic-jam spawner
+- [ ] F349 Sandbox: weather and time presets
+- [ ] F350 Sandbox: spectate any NPC car

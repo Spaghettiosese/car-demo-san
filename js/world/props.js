@@ -256,7 +256,7 @@ export class Props {
     const poleGeo = new THREE.CylinderGeometry(0.13, 0.16, 6.2, 8);
     const armGeo = new THREE.BoxGeometry(0.12, 0.12, 1);
     const headGeo = new THREE.BoxGeometry(0.4, 1.05, 0.3);
-    const lampGeo = new THREE.SphereGeometry(0.12, 10, 8);
+    const lampGeo = new THREE.IcosahedronGeometry(0.12, 0);
     const dark = new THREE.MeshStandardMaterial({ color: 0x1a1b1d, roughness: 0.6, metalness: 0.4 });
     const yel = new THREE.MeshStandardMaterial({ color: 0x3b3a1f, roughness: 0.6, metalness: 0.4 });
     const approaches = [];

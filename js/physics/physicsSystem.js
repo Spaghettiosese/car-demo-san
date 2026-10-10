@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyWater } from './water.js';
 import { resolveContact } from './body.js';
 
 const GRAVITY = new THREE.Vector3(0, -9.81, 0);
@@ -35,8 +36,10 @@ export class PhysicsSystem {
     const active = cars.filter((c) => c.physicsActive && !c.removed);
     for (const c of active) if (c.body.sleeping && c.phys.input.throttle > 0.01) c.body.sleeping = false;
     for (let s = 0; s < n; s++) {
+      const terrain = this.world.terrain;
       for (const c of active) {
         if (c.body.sleeping) continue;
+        applyWater(c, terrain, h);
         c.phys.step(h, this.world, this.gravity);
       }
       for (const c of active) if (!c.body.sleeping) this.collideStatic(c, h);
@@ -130,8 +133,10 @@ export class PhysicsSystem {
     // poles and trees: vertical cylinders vs the car's local box
     if (_cyls.length) {
       const min = car.boundsMin, max = car.boundsMax;
+      const by = b.position.y;
       for (const cy of _cyls) {
         if (cy.broken) continue;
+        if (by + max.y < cy.y0 || by + min.y > cy.y1) continue;
         _a.set(cy.x, b.position.y, cy.z);
         b.toLocalPoint(_a, _l);
         const cx = Math.max(min.x, Math.min(max.x, _l.x));

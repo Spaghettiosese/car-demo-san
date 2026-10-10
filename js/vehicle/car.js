@@ -3,6 +3,7 @@ import { buildTuning } from './specs.js';
 import { VehiclePhysics } from './vehiclePhysics.js';
 import { buildCarModel } from './carBuilder.js';
 import { clamp, lerp, damp } from '../core/util.js';
+import { updateWaterEffects } from '../physics/water.js';
 
 let NEXT_ID = 1;
 const _v = new THREE.Vector3();
@@ -162,7 +163,7 @@ export class Car {
     return s.ignition;
   }
   get electrics() {
-    return this.sys.ignition !== 'off' || this.phys.pt.running;
+    return !this.electricsDead && (this.sys.ignition !== 'off' || this.phys.pt.running);
   }
   cycleHeadlights() {
     this.sys.headlights = (this.sys.headlights + 1) % 3;
@@ -452,6 +453,9 @@ export class Car {
     this.fuelLeak = 0;
     this.onFire = 0;
     this.wrecked = false;
+    this.flood = 0;
+    this.electricsDead = false;
+    pt.hydrolocked = false;
     m.applyDeformation();
     this.computeBounds();
     if (m.livery) this.game.repaintLivery?.(this);
@@ -550,6 +554,7 @@ export class Car {
     if (pt.radiator < 0.8 && pt.running) this.smoke = Math.max(this.smoke, 0.25 * (1 - pt.radiator));
     this.wrecked = pt.health <= 0.02 || this.phys.wheels.filter((w) => w.detached).length >= 2;
     this.lastImpact = Math.max(0, this.lastImpact - dt * 20);
+    updateWaterEffects(this, dt, this.game);
     this.animateParts(dt);
     this.syncVisual(dt, time);
   }
@@ -678,6 +683,47 @@ export class Car {
     return u && !u.broken;
   }
 
+  /** Distance LOD: full model up close, a painted block further out, nothing far away. */
+  setLod(dist) {
+    const lod = dist < 240 ? 0 : dist < 1000 ? 1 : 2;
+    if (lod === this.lod) return;
+    const root = this.root;
+    if (lod > 0 && !this.impostor) this.impostor = this.buildImpostor();
+    if (this.lod === 0 || this.lod === undefined) {
+      this.lodChildren = root.children.filter((c) => c !== this.impostor && c.visible);
+    }
+    const full = lod === 0;
+    for (const c of this.lodChildren || []) if (c.parent === root) c.visible = full;
+    if (this.impostor) this.impostor.visible = lod === 1;
+    this.lod = lod;
+  }
+
+  buildImpostor() {
+    if (!this.boundsMin) this.computeBounds();
+    const mn = this.boundsMin, mx = this.boundsMax;
+    const w = mx.x - mn.x, l = mx.z - mn.z, h = mx.y - mn.y;
+    const paint = new THREE.Color(this.cfg.paint || '#888888');
+    const parts = [
+      [w, h * 0.5, l, 0, mn.y + h * 0.3, (mn.z + mx.z) / 2, paint],
+      [w * 0.86, h * 0.36, l * 0.5, 0, mn.y + h * 0.72, (mn.z + mx.z) / 2 - l * 0.04, new THREE.Color(0x1a1e24)],
+    ];
+    const pos = [], col = [];
+    for (const [bw, bh, bl, x, y, z, c] of parts) {
+      const g = new THREE.BoxGeometry(bw, bh, bl).toNonIndexed();
+      g.translate(x, y, z);
+      pos.push(...g.attributes.position.array);
+      for (let i = 0; i < g.attributes.position.count; i++) col.push(c.r, c.g, c.b);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, _impostorMat || (_impostorMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 })));
+    m.visible = false;
+    this.root.add(m);
+    return m;
+  }
+
   dispose() {
     this.root.parent?.remove(this.root);
     this.root.traverse((o) => {
@@ -685,3 +731,5 @@ export class Car {
     });
   }
 }
+
+let _impostorMat = null;

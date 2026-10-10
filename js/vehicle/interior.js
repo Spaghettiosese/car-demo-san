@@ -416,7 +416,7 @@ export class Interior {
     // rear-view mirror with a live render target
     const mirrorPos = new THREE.Vector3(0.02, f.top(Z.roofF) - 0.1, Z.roofF - 0.03);
     this.mirrorRT = new THREE.WebGLRenderTarget(512, 160, { type: THREE.HalfFloatType });
-    this.mirrorCam = new THREE.PerspectiveCamera(24, 512 / 160, 0.3, 600);
+    this.mirrorCam = new THREE.PerspectiveCamera(24, 512 / 160, 0.3, 320);
     const mirrorMat = new THREE.MeshBasicMaterial({ map: this.mirrorRT.texture });
     const mg = new THREE.PlaneGeometry(0.21, 0.062);
     // flip horizontally for a mirror image

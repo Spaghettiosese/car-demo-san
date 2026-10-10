@@ -78,6 +78,15 @@ export class Powertrain {
     this.running = false;
     this.cranking = false;
   }
+  /** Water in the cylinders: the engine stops dead and won't turn over again. */
+  hydrolock() {
+    this.hydrolocked = true;
+    this.health = 0;
+    this.running = false;
+    this.cranking = false;
+    this.omega = 0;
+    this.events.push({ type: 'hydrolock' });
+  }
 
   maxTorqueAt(rpm) {
     const s = this.spec;
@@ -201,7 +210,9 @@ export class Powertrain {
     // --- starter ---
     if (this.cranking) {
       this.crankTime += dt;
-      if (this.fuel > 0 && this.health > 0.02 && this.crankTime > this.crankNeeded) {
+      if (this.hydrolocked) {
+        if (this.crankTime > 0.4) this.stopCrank();
+      } else if (this.fuel > 0 && this.health > 0.02 && this.crankTime > this.crankNeeded) {
         this.running = true;
         this.cranking = false;
         this.events.push({ type: 'start' });

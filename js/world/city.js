@@ -24,7 +24,7 @@ const STREETS = ['1st St', '2nd St', '3rd St', 'Main St', '5th St', '6th St', '7
 export const PG = { x0: CITY_HALF + 12, x1: CITY_HALF + 430, z0: -320, z1: 320 }; // proving grounds
 
 /** Collects quads per material index into one merged BufferGeometry. */
-class MeshBuilder {
+export class MeshBuilder {
   constructor(nMats = 1) {
     this.pos = [];
     this.nrm = [];
@@ -238,6 +238,7 @@ export class City {
       if (dz < bd && Math.abs(p.x) < CITY_HALF + 5) { bd = dz; best = STREETS[k]; }
     }
     if (p.x > PG.x0 - 2 && p.x < PG.x1 && p.z > PG.z0 && p.z < PG.z1) return 'Proving Grounds';
+    if ((Math.abs(p.x) > CITY_HALF + 3 || Math.abs(p.z) > CITY_HALF + 3) && this.outsideName) return this.outsideName(p);
     if (bd > RW / 2 + SW + 2) {
       const b = this.blockAt(p.x, p.z);
       if (b && b.label) return b.label;
@@ -281,19 +282,7 @@ export class City {
   // ------------------------------------------------------------ ground
   buildGround() {
     const world = this.world;
-    // grass everywhere except under the paved city and proving grounds (no overlapping planes)
-    const gmat = new THREE.MeshStandardMaterial({ map: grassTexture(), roughness: 1, color: 0x9aa58a });
-    const gb = new MeshBuilder(1);
-    const F = 3000, H = CITY_HALF;
-    gb.flat(-F, -F, -H, F, 0, 5);
-    gb.flat(PG.x1, -F, F, F, 0, 5);
-    gb.flat(-H, H, H, F, 0, 5);
-    gb.flat(-H, -F, H, -H, 0, 5);
-    gb.flat(H, PG.z1, PG.x1, F, 0, 5);
-    gb.flat(H, -F, PG.x1, PG.z0, 0, 5);
-    const ground = new THREE.Mesh(gb.build(), gmat);
-    ground.receiveShadow = true;
-    this.group.add(ground);
+    // the countryside around the paved areas is the Terrain (terrain.js)
     world.baseMaterial = (x, z) => {
       if (Math.abs(x) <= CITY_HALF + 1 && Math.abs(z) <= CITY_HALF + 1) return MATERIALS.asphalt;
       if (x > PG.x0 - 14 && x < PG.x1 && z > PG.z0 && z < PG.z1) return MATERIALS.asphalt;
@@ -778,6 +767,7 @@ export class City {
     for (let k = 0; k < 36; k++) {
       const a = (k / 36) * Math.PI * 2;
       const r = 1500 + rnd() * 400;
+      if (Math.sin(a) * r > 200) continue; // open sea to the south
       const h = 80 + rnd() * 220;
       const m = new THREE.Mesh(new THREE.ConeGeometry(180 + rnd() * 200, h, 7), mat);
       m.position.set(Math.cos(a) * r, h / 2 - 5, Math.sin(a) * r);

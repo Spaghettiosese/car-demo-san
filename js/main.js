@@ -3,6 +3,8 @@ import { Input } from './input.js';
 import { StaticWorld } from './physics/world.js';
 import { PhysicsSystem } from './physics/physicsSystem.js';
 import { City, CITY } from './world/city.js';
+import { Terrain } from './world/terrain.js';
+import { Coast } from './world/coast.js';
 import { Props } from './world/props.js';
 import { Environment } from './world/environment.js';
 import { FX } from './fx/particles.js';
@@ -103,6 +105,15 @@ export class Game {
     this.env.setWeather(this.settings.startWeather);
     this.env.timeScale = (1 / 60) * this.settings.timeScale;
     this.city = new City(this.scene, this.world).build();
+    progress(0.25, 'Raising the mountains…');
+    await tick();
+    this.terrain = new Terrain(this.scene, this.world, this.city).build();
+    this.world.terrain = this.terrain;
+    this.city.outsideName = (p) => {
+      const pr = this.coast?.pier;
+      if (pr && Math.abs(p.x - pr.x) < pr.w && p.z > pr.z0 && p.z < pr.z1 && p.y > 0.5) return 'Pier';
+      return this.terrain.regionName(p);
+    };
     progress(0.35, 'Planting trees and lamp posts…');
     await tick();
     this.fx = new FX(this.scene);
@@ -112,6 +123,8 @@ export class Game {
     this.debris.onHit = (it, v) => this.audio?.debrisHit?.(it, v);
     this.props = new Props(this, this.city);
     this.props.build();
+    this.coast = new Coast(this).build();
+    Object.assign(this.city.locations, this.coast.locations, { lookout: { pos: this.terrain.lookout.pos.clone(), yaw: this.terrain.lookout.yaw, name: 'Demo Peak' } });
     this.physics = new PhysicsSystem(this.world);
     this.physics.props = this.props;
     this.physics.debris = this.debris;
@@ -374,6 +387,8 @@ export class Game {
     if (what === 'loose' && part && part.name === 'hood') this.toast('Hood latch broken', 'warn');
     if (what === 'wheelOff') this.toast('You lost a wheel!', 'warn');
     if (what === 'engineDead') this.toast('Engine destroyed. <kbd>Backspace</kbd> to repair', 'warn', 5);
+    if (what === 'hydrolock') this.toast('Engine hydrolocked: it sucked in water', 'warn', 5);
+    if (what === 'shorted') this.toast('The electrics shorted out', 'warn', 4);
     this.audio?.clunk?.(car, 1);
   }
 
@@ -464,6 +479,8 @@ export class Game {
     if (this.player.mode === 'foot') this.onFoot?.update(sim, input);
     this.debris.update(sim);
     this.city.update(sim);
+    this.terrain.update(sim, this.camera.position);
+    this.coast.update(sim, this.env.night);
     this.props.update(sim, this.camera.position);
     this.carEffects(sim);
     this.fx.update(sim);
@@ -484,11 +501,17 @@ export class Game {
     this.city.setNight(night);
     this.props.setNight(night);
     this.city.setWetness(this.env.wetness);
+    this.terrain.setWetness(this.env.wetness);
+    this.coast.setWetness(this.env.wetness);
+    this.coast.setNight(night);
     for (const c of this.cars) c.phys.wet = this.env.wetness;
     this.city.hillsMat.color.setRGB(0.32, 0.38, 0.25).multiplyScalar(0.25 + 0.75 * (1 - night));
     this.fx.setAmbient(0.1 + 0.87 * (1 - night));
 
     this.updateCarLights();
+    // distance LOD for cars
+    const cp = this.camera.position;
+    for (const c of this.cars) c.setLod(c === pc && this.cam.mode !== 'free' ? 0 : c.body.position.distanceTo(cp));
     // camera
     this.cam.lookBack = input.down('lookBack');
     if (this.player.mode === 'foot' && this.onFoot) this.onFoot.updateCamera(dt, input);
@@ -645,7 +668,7 @@ export class Game {
           return;
         }
         const mat = w.mat ? w.mat.name : 'asphalt';
-        const loose = mat === 'grass' || mat === 'dirt';
+        const loose = !!(w.mat && w.mat.loose);
         const slide = w.slideVel;
         let skid = 0;
         if (w.slip > 1.1 && slide > 2.5) skid = clamp((w.slip - 1.1) * 0.35, 0, 1) * clamp((slide - 2.5) / 6, 0, 1);
@@ -722,6 +745,8 @@ export class Game {
       else c.syncVisual(dt, this.physics.time);
     }
     this.city.update(dt);
+    this.terrain.update(dt, this.camera.position);
+    this.coast.update(dt, this.env.night);
     this.props.update(dt, this.camera.position);
     this.fx.update(dt);
     this.skids.update();
@@ -738,6 +763,9 @@ export class Game {
     this.city.setNight(night);
     this.props.setNight(night);
     this.city.setWetness(this.env.wetness);
+    this.terrain.setWetness(this.env.wetness);
+    this.coast.setWetness(this.env.wetness);
+    this.coast.setNight(night);
     this.audio?.update?.(dt);
   }
 
@@ -869,6 +897,7 @@ const bar = loading.querySelector('.fill');
 const msg = loading.querySelector('.msg');
 const game = new Game();
 window.game = game;
+window.__THREE = THREE;
 game
   .init((p, m) => {
     bar.style.width = `${Math.round(p * 100)}%`;
