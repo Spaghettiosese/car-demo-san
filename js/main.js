@@ -18,6 +18,9 @@ import { beamTexture } from './world/textures.js';
 import { CameraRig, CAMERA_MODES } from './camera.js';
 import { PlayerDriver } from './player.js';
 import { HUD } from './ui/hud.js';
+import { PhotoMode } from './ui/photo.js';
+import { Sandbox } from './sandbox.js';
+import { Replay } from './replay.js';
 import { clamp, lerp, KMH } from './core/util.js';
 
 export const DEFAULT_SETTINGS = {
@@ -168,6 +171,9 @@ export class Game {
     this.driver = new PlayerDriver(this);
     this.hud = new HUD(this);
     await this.initOptional(progress);
+    this.replay = new Replay(this);
+    this.photo = new PhotoMode(this);
+    this.sandbox = new Sandbox(this);
     this.spawnPlayer(this.carConfig);
     progress(0.95, 'Warming up tyres…');
     await tick();
@@ -472,6 +478,7 @@ export class Game {
       if (dv > 6) this.hud.hurt(Math.min(0.9, dv / 25));
       if (dv > 5) this.stats.crashes++;
       if (dv > 16 && this.settings.slowmo && this.slowmoTimer <= 0) this.startSlowmo(1.6);
+      if (car === this.player.car) this.replay?.onCrash(dv);
       this.interior?.onImpact?.(dv, p);
       if (dv > 12 && !car.sys.seatbelt) this.cam.addShake(0.8);
     }
@@ -669,6 +676,12 @@ export class Game {
       if (input.pressed('pause') || (this.state === 'map' && input.pressed('map'))) this.menus?.closeAll();
       return;
     }
+    if (this.state === 'replay') {
+      this.replay.update(dt);
+      this.audio?.update(dt);
+      this.hud.updateExtras?.(dt);
+      return;
+    }
     if (this.state === 'card') {
       if (input.pressed('pause')) this.activities?.closeCard();
       return;
@@ -687,7 +700,12 @@ export class Game {
     const pc = this.player.car;
     const photo = this.cam.mode === 'free';
     if (photo && this.settings.photoPause !== false) sim = 0;
-    if (this.player.mode === 'car' && pc && !photo) {
+    if (this.sandbox?.spectating && pc) {
+      // spectating an NPC: your own car waits with the brake on
+      pc.phys.input.throttle = 0;
+      pc.phys.input.brake = 1;
+      if (input.pressed('enterExit')) this.sandbox.stopSpectate();
+    } else if (this.player.mode === 'car' && pc && !photo) {
       this.driver.update(pc, dt, input);
       this.carKeys(pc, dt);
       if (this.crash) this.updateCrashTest(pc, dt);
@@ -701,6 +719,7 @@ export class Game {
       if (wind) for (const c of this.cars) if (c.physicsActive) c.phys.wind.copy(wind);
       this.traffic?.update(sim);
       this.services?.update(sim);
+      this.sandbox?.update(sim);
       this.peds?.update(sim);
       this.police?.update(sim);
       this.physics.step(sim, this.cars);
@@ -711,6 +730,8 @@ export class Game {
       }
       if (this.player.mode === 'foot') this.onFoot?.update(sim, input);
       this.debris.update(sim);
+      this.replay?.record(sim);
+      this.replay?.tickPending(dt);
     } else this.peds?.render?.();
     this.city.update(sim);
     this.terrain.update(sim, this.camera.position, this.env.wind);
@@ -790,12 +811,13 @@ export class Game {
       this.toast(this.manualSlowmo ? 'Slow motion ON' : 'Slow motion OFF');
     }
     if (input.pressed('photo')) this.togglePhoto();
-    if (this.cam.mode === 'free' && input.keyPressed('Enter')) {
-      this.audio?.shutter?.();
-      if (!this.freeroam?.snap()) this.toast('📷 Snap! (find a photo spot for a challenge reward)', 'info', 2);
+    if (input.pressed('replay')) this.replay?.start();
+    if (this.cam.mode === 'free' && this.photo?.active) {
+      this.photo.update();
+      if (input.keyPressed('Enter')) this.photo.snap();
     }
     if (input.pressed('radio')) this.audio?.nextStation?.();
-    if (input.pressed('enterExit')) this.toggleOnFoot();
+    if (input.pressed('enterExit') && !this.sandbox?.spectating) this.toggleOnFoot();
   }
 
   /**
@@ -818,6 +840,7 @@ export class Game {
     if (pt.auto) pt.setSelector('D');
     car.sys.seatbelt = true;
     this.crash = { v, kmh, state: 'tow', t: 0, peakG: 0, impactV: 0, cam: this.cam.mode };
+    if (this.replay) this.replay.lastAuto = performance.now(); // the report matters more than an automatic replay here
     this.cam.setMode('tv');
     this.cam.initialized = false;
     this.toast(`Crash test at ${this.fmtSpeed(v)} — hands off!`, 'info', 2);
@@ -878,11 +901,12 @@ export class Game {
     if (!on && this.cam.mode === 'free') {
       this.cam.setMode(this.prevCamMode || 'chase');
       this.input.enabled = true;
-      this.freeroam?.photoExit?.();
+      this.photo?.close();
     } else if (on && this.cam.mode !== 'free') {
       this.prevCamMode = this.cam.mode;
       this.cam.setMode('free');
-      this.toast('Photo mode: WASD + mouse, Q/E up/down, Shift fast, P to snap. F2 to exit.');
+      this.photo?.open();
+      this.toast('Photo mode: WASD + mouse to fly, Q/E up/down, Shift fast. Enter saves a PNG, F2 exits.', 'info', 4);
     }
   }
 
@@ -1229,7 +1253,7 @@ export class Game {
     const garage = this.state === 'garage' && this.garage;
     const scene = garage ? this.garage.scene : this.scene;
     const cam = garage ? this.garage.camera : this.camera;
-    if (this.post && this.settings.bloom) this.post.render(dt, this, scene, cam);
+    if (this.post && (this.settings.bloom || this.photo?.active)) this.post.render(dt, this, scene, cam);
     else this.renderer.render(scene, cam);
     if (!garage && this.player.mode === 'car') this.interior?.renderMirrors?.(this.renderer);
     this.hud.pipShown = false;

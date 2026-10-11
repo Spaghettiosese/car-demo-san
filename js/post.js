@@ -32,7 +32,8 @@ void main() {
 
 const COMPOSITE = /* glsl */ `
 uniform sampler2D tScene, tBloom1, tBloom2;
-uniform float uBloom, uExposure, uVignette, uGrain, uTime, uAberr, uSat, uContrast;
+uniform float uBloom, uExposure, uVignette, uGrain, uTime, uAberr, uSat, uContrast, uSepia;
+uniform vec3 uTint;
 varying vec2 vUv;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 // ACES filmic (Narkowicz fit, same family as three.js)
@@ -55,6 +56,11 @@ void main() {
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = mix(vec3(l), col, uSat);
   col = (col - 0.5) * uContrast + 0.5;
+  col *= uTint;
+  if (uSepia > 0.0) {
+    float sl = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(col, vec3(sl * 1.07, sl * 0.87, sl * 0.62), uSepia);
+  }
   col *= 1.0 - uVignette * dot(d, d) * 1.8;
   col = toSRGB(clamp(col, 0.0, 1.0));
   col += (hash(uv * 1000.0 + uTime) - 0.5) * uGrain;
@@ -90,6 +96,8 @@ export class PostFX {
       uTime: { value: 0 },
       uAberr: { value: 0 },
       uSat: { value: 1.08 },
+      uSepia: { value: 0 },
+      uTint: { value: new THREE.Vector3(1, 1, 1) },
       uContrast: { value: 1.04 },
     });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.comp);
@@ -148,6 +156,17 @@ export class PostFX {
     const night = game.env ? game.env.night : 0;
     u.uExposure.value = 1.0 + night * 0.35;
     u.uBloom.value = 0.45 + night * 0.35;
+    // photo-mode grading overrides
+    const ph = this.photo;
+    u.uSat.value = ph ? ph.sat : 1.08;
+    u.uContrast.value = ph ? ph.contrast : 1.04;
+    u.uVignette.value = ph ? ph.vignette : 0.35;
+    u.uGrain.value = ph ? ph.grain : 0.025;
+    u.uSepia.value = ph ? ph.sepia : 0;
+    if (ph) {
+      u.uExposure.value *= ph.exposure;
+      u.uTint.value.set(...ph.tint);
+    } else u.uTint.value.set(1, 1, 1);
     this.draw(this.comp, null);
   }
 }

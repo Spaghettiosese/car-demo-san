@@ -314,15 +314,15 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F295 Thunder arrives after the lightning, delayed by its distance
 
 ## I. Camera, photo and replay (296–315)
-- [ ] F296 Replay system (ring buffer of the last 30 s)
-- [ ] F297 Automatic crash replay
-- [ ] F298 Replay scrubbing and playback speed
-- [ ] F299 Replay cameras: chase, trackside, free
+- [x] F296 Replay system (ring buffer of the last 30 s)
+- [x] F297 Automatic crash replay
+- [x] F298 Replay scrubbing and playback speed
+- [x] F299 Replay cameras: chase, trackside, free
 - [x] F300 Photo mode pauses the sim and blocks driving input
-- [ ] F301 Photo mode hides the HUD
-- [ ] F302 Photo mode exposure and colour filters
-- [ ] F303 Photo mode vignette and grain
-- [ ] F304 Save a screenshot as PNG
+- [x] F301 Photo mode hides the HUD
+- [x] F302 Photo mode exposure and colour filters
+- [x] F303 Photo mode vignette and grain
+- [x] F304 Save a screenshot as PNG
 - [x] F305 Helmet cam (cockpit with head tilt into corners)
 - [x] F306 Drone camera
 - [x] F307 Wheel cam
@@ -333,7 +333,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F312 Rear-view picture-in-picture in the chase cam
 - [x] F313 Cinematic camera with automatic cuts
 - [x] F314 Cameras collide with terrain (no clipping into hills)
-- [ ] F315 Photo mode time-of-day slider
+- [x] F315 Photo mode time-of-day slider
 
 ## J. UI, HUD, settings and sandbox (316–350)
 - [x] F316 New main menu with Career and Free Roam
@@ -365,9 +365,9 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F342 Reduce camera shake (accessibility)
 - [x] F343 Toggle-or-hold control options (accessibility)
 - [x] F344 About and credits screen
-- [ ] F345 Sandbox: spawn AI with a chosen behaviour (racer, derby, flee, rage)
-- [ ] F346 Sandbox: save and load scenarios
-- [ ] F347 Sandbox: black-ice patches
-- [ ] F348 Sandbox: traffic-jam spawner
-- [ ] F349 Sandbox: weather and time presets
-- [ ] F350 Sandbox: spectate any NPC car
+- [x] F345 Sandbox: spawn AI with a chosen behaviour (racer, derby, flee, rage)
+- [x] F346 Sandbox: save and load scenarios
+- [x] F347 Sandbox: black-ice patches
+- [x] F348 Sandbox: traffic-jam spawner
+- [x] F349 Sandbox: weather and time presets
+- [x] F350 Sandbox: spectate any NPC car

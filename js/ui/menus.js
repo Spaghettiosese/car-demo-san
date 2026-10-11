@@ -1,3 +1,4 @@
+import { Sandbox, PRESETS } from '../sandbox.js';
 import * as THREE from 'three';
 import { save, DEFAULT_SETTINGS } from '../main.js';
 import { Car } from '../vehicle/car.js';
@@ -430,6 +431,11 @@ export class Menus {
       this.row('Your car', `<button class="btn small" data-a="repair">Repair</button><button class="btn small" data-a="flip">Flip / recover</button><button class="btn small" data-a="refuel">Refuel</button><button class="btn small" data-a="invuln">${g.player.car?.invulnerable ? 'Damage: OFF' : 'Damage: ON'}</button>`),
       this.row('Teleport', Object.entries(locs).map(([k, l]) => `<button class="btn small" data-tp="${k}">${l.name}</button>`).join('')),
       this.row('Crash test (Proving Grounds wall)', [30, 50, 64, 80, 120, 160].map((v) => `<button class="btn small" data-ct="${v}">${g.fmtSpeed ? g.fmtSpeed(v / 3.6) : v + ' km/h'}</button>`).join('')),
+      this.row('AI with a behaviour', ['racer', 'derby', 'flee', 'rage'].map((k) => `<button class="btn small" data-ai="${k}">${{ racer: '🏁 Racer', derby: '💥 Derby', flee: '🏃 Flee', rage: '😡 Road rage' }[k]}</button>`).join('')),
+      this.row('Hazards', `<button class="btn small" data-x="ice">❄ Black ice ahead</button><button class="btn small" data-x="jam">🚗 Traffic jam ahead</button><button class="btn small" data-x="clear">Clear sandbox stuff</button>`),
+      this.row('Weather & time', Object.entries(PRESETS).map(([k, p]) => `<button class="btn small" data-pre="${k}">${p.name}</button>`).join('')),
+      this.row('Spectate', `<button class="btn small" data-x="spec">👁 Spectate the nearest NPC</button>`),
+      this.row('Scenarios', Sandbox.listScenarios().map((sc) => `<span class="scn">#${sc.slot} ${sc.saved ? `<i>${sc.car} · ${new Date(sc.saved).toLocaleString()}</i>` : '<i>empty</i>'} <button class="btn small" data-sv="${sc.slot}">Save</button><button class="btn small" data-ld="${sc.slot}" ${sc.saved ? '' : 'disabled'}>Load</button></span>`).join('')),
       this.row('Spawn in front of you', `<button class="btn small" data-sp="ramp">Ramp</button><button class="btn small" data-sp="car">Parked car</button><button class="btn small" data-sp="wall">Car wall (3)</button><button class="btn small" data-sp="cones">Cones</button><button class="btn small" data-sp="barrels">Barrels</button>`),
       this.row('Chaos', `<button class="btn small" data-a="launch">Launch me</button><button class="btn small" data-a="carrain">Car rain</button><button class="btn small" data-a="ragenear">Anger nearest driver</button>`),
       this.row('Wanted level', [0, 1, 2, 3, 4, 5].map((n) => `<button class="btn small" data-w="${n}">${n ? '★'.repeat(n) : 'Clear'}</button>`).join('')),
@@ -483,6 +489,31 @@ export class Menus {
       this.spawn(b.dataset.sp);
       this.closeAll();
     }));
+    const sb = g.sandbox;
+    c.querySelectorAll('[data-ai]').forEach((b) => (b.onclick = () => {
+      this.closeAll();
+      sb?.spawnAI(b.dataset.ai);
+    }));
+    c.querySelectorAll('[data-x]').forEach((b) => (b.onclick = () => {
+      const x = b.dataset.x;
+      this.closeAll();
+      if (x === 'ice') sb?.blackIce();
+      else if (x === 'jam') sb?.trafficJam();
+      else if (x === 'clear') sb?.clear();
+      else if (x === 'spec') sb?.spectate(0);
+    }));
+    c.querySelectorAll('[data-pre]').forEach((b) => (b.onclick = () => {
+      sb?.preset(b.dataset.pre);
+      this.closeAll();
+    }));
+    c.querySelectorAll('[data-sv]').forEach((b) => (b.onclick = () => {
+      sb?.saveScenario(+b.dataset.sv);
+      this.sandboxTab(c);
+    }));
+    c.querySelectorAll('[data-ld]').forEach((b) => (b.onclick = () => {
+      this.closeAll();
+      sb?.loadScenario(+b.dataset.ld);
+    }));
     c.querySelectorAll('[data-ct]').forEach((b) => (b.onclick = () => {
       this.closeAll();
       g.crashTest(+b.dataset.ct);
@@ -516,7 +547,8 @@ export class Menus {
     const at = (d, side = 0) => b.position.clone().addScaledVector(fwd, d).add(new THREE.Vector3(-fwd.z, 0, fwd.x).multiplyScalar(side));
     if (kind === 'ramp') {
       const p = at(28);
-      g.city.ramp(p.x, p.z, yaw, 7, 14, 0, 2.6, 'metal');
+      if (g.sandbox) g.sandbox.addRamp(p.x, p.z, yaw, 7, 14, 0, 2.6, 'metal');
+      else g.city.ramp(p.x, p.z, yaw, 7, 14, 0, 2.6, 'metal');
     } else if (kind === 'car' || kind === 'wall') {
       const n = kind === 'wall' ? 3 : 1;
       for (let i = 0; i < n; i++) {
