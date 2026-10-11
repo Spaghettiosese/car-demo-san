@@ -46,6 +46,39 @@ export function randomPlate(rnd = Math.random) {
   return `${L[Math.floor(rnd() * 23)]}${L[Math.floor(rnd() * 23)]}${L[Math.floor(rnd() * 23)]} ${Math.floor(rnd() * 900 + 100)}`;
 }
 
+const L_PLATE_GEO = new THREE.PlaneGeometry(0.28, 0.28);
+let _lMat = null;
+function lPlateMat() {
+  if (_lMat) return _lMat;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, 64, 64);
+  x.fillStyle = '#d0021b';
+  x.font = 'bold 54px Arial';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText('L', 32, 35);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _lMat = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.6 });
+  return _lMat;
+}
+const ARGUE = ['You hit MY car!', 'Are you serious?!', 'Insurance details. NOW.', 'Watch where you\'re going!', 'This is a new car!', 'Unbelievable.'];
+const CONFRONT = ['GET OUT OF THE CAR!', 'You think that was funny?!', 'Yeah, you! Roll the window down!', 'I\'ve got your plate number!', 'Say that to my face!'];
+
+/** Pick a driving style for a new NPC (drunks only appear late at night). */
+export function pickPersona(game, rnd = Math.random) {
+  const night = game.env.night > 0.6;
+  const r = rnd();
+  if (night && r < 0.06) return 'drunk';
+  if (r < 0.13) return 'learner';
+  if (r < 0.21) return 'elderly';
+  if (r < 0.3) return 'racer';
+  return 'normal';
+}
+
 // ================================================================== driver
 export class Driver {
   constructor(car, mgr, opts = {}) {
@@ -80,6 +113,44 @@ export class Driver {
     this.laneChange = null;
     this.overtake = 0;
     this.hornType = null;
+    this.persona = 'normal';
+    this.accelMul = 1;
+    this.weave = 0;
+    this.yieldT = 0;
+    this.yieldShift = 0;
+    this.stopPass = null;
+    this.dpCd = 60 + r() * 120;
+    this.argueCd = 0;
+    this.rageMode = 'tail';
+    this.rageModeT = 6;
+  }
+
+  /** Driving style: normal, learner, elderly, racer (boy-racer) or drunk (only at night). */
+  setPersona(kind) {
+    const r = Math.random;
+    this.persona = kind;
+    this.accelMul = 1;
+    this.weave = 0;
+    if (kind === 'learner') Object.assign(this, { speedFactor: 0.68 + r() * 0.08, aggression: 0, headway: 2.2, patience: 9, accelMul: 0.6 });
+    else if (kind === 'elderly') Object.assign(this, { speedFactor: 0.7 + r() * 0.08, aggression: 0.1, headway: 1.9, patience: 10, accelMul: 0.55 });
+    else if (kind === 'racer') Object.assign(this, { speedFactor: 1.2 + r() * 0.12, aggression: 0.85 + r() * 0.15, headway: 0.55, patience: 1.2, accelMul: 1.6 });
+    else if (kind === 'drunk') Object.assign(this, { speedFactor: 0.85 + r() * 0.4, aggression: 0.6, headway: 0.9, patience: 2, accelMul: 1.2, weave: 0.8 + r() * 0.8 });
+    else {
+      this.speedFactor = 0.85 + r() * 0.28;
+      this.aggression = r();
+      this.patience = 2 + (1 - this.aggression) * 5;
+      this.headway = 1.0 + (1 - this.aggression) * 0.6;
+    }
+    // learners wear an L plate on the roof
+    const car = this.car;
+    if (kind === 'learner' && !car.lPlate) {
+      const m = new THREE.Mesh(L_PLATE_GEO, lPlateMat());
+      m.position.set(0, car.boundsMax.y + 0.16, 0);
+      car.root.add(m);
+      car.lPlate = m;
+    }
+    if (car.lPlate) car.lPlate.visible = kind === 'learner';
+    if (kind === 'racer') this.hornType = 'high';
   }
 
   // ------------------------------------------------------------ path building
@@ -99,9 +170,20 @@ export class Driver {
   /** Choose where to go after this segment. */
   decide(seg, lane) {
     if (this.plan.has(seg.id)) return this.plan.get(seg.id);
-    const outs = seg.to.out.filter((s) => s !== seg.reverse);
+    let outs = seg.to.out.filter((s) => s !== seg.reverse && !s.closed);
+    if (!outs.length) outs = seg.to.out.filter((s) => s !== seg.reverse);
     let pick = null;
-    if (this.forcedRoute && this.forcedRoute.length) {
+    if (this.routeGoal) {
+      // heading somewhere: re-plan at every junction (cheap on a 7x7 grid), no U-turns
+      if (seg.to !== this.routeGoal) {
+        const path = nodePath(this.city, seg.to, this.routeGoal);
+        pick = outs.find((s) => s.to === path[1]) || null;
+        if (!pick) {
+          const gx = this.routeGoal.x, gz = this.routeGoal.z;
+          pick = outs.slice().sort((a, b) => Math.hypot(a.to.x - gx, a.to.z - gz) - Math.hypot(b.to.x - gx, b.to.z - gz))[0] || null;
+        }
+      }
+    } else if (this.forcedRoute && this.forcedRoute.length) {
       const nxt = this.forcedRoute[0];
       pick = outs.find((s) => s.to === nxt) || null;
     }
@@ -315,6 +397,9 @@ export class Driver {
       if (d < -0.5) continue;
       const sig = this.city.signalFor(seg);
       const gap = d - this.car.boundsMax.z;
+      // emergency vehicles on a call treat lights as advisory (but slow through the junction)
+      if (this.car.sirenOn) return sig === 'red' && gap < 12 && v > 7 ? gap + 8 : Infinity;
+      if (sig === 'stop') return this.stopSign(seg, gap, v);
       if (sig === 'red' && gap > -0.8) return gap;
       if (sig === 'yellow') {
         const brakeDist = (v * v) / (2 * 4);
@@ -326,6 +411,39 @@ export class Driver {
       return Infinity;
     }
     return Infinity;
+  }
+
+  /** All-way stop: stop at the line, then go in order of arrival once the junction is clear. */
+  stopSign(seg, gap, v) {
+    if (this.stopPass === seg) return Infinity;
+    const node = seg.to;
+    const city = this.city;
+    const q = (node.queue ||= new Map());
+    if (gap < (this.car.physicsActive ? 3.4 : 4.4) && v < 0.4) { // IDM keeps ~2.2 m to the line
+      if (!q.has(this.car)) q.set(this.car, city.time);
+      const t0 = q.get(this.car);
+      if (city.time - t0 < 0.9) return gap;
+      // first come, first served among cars still waiting here
+      for (const [c, t] of q) {
+        if (c === this.car) continue;
+        if (c.removed || city.time - t > 40 || c.body.position.distanceTo(_v.set(node.x, 0, node.z)) > 16) {
+          q.delete(c);
+          continue;
+        }
+        if (t < t0 - 0.05) return gap;
+      }
+      // anything moving in the box?
+      const half = CITY.RW / 2 + 1;
+      for (const c of this.game.cars) {
+        if (c === this.car || c.removed) continue;
+        const p = c.body.position;
+        if (Math.abs(p.x - node.x) < half && Math.abs(p.z - node.z) < half && c.speed > 0.8) return gap;
+      }
+      q.delete(this.car);
+      this.stopPass = seg;
+      return Infinity;
+    }
+    return gap;
   }
 
   oncoming(seg) {
@@ -373,7 +491,26 @@ export class Driver {
       this.setInputs(0, 1, 0);
       return;
     }
-    if (this.state === 'rage') return this.updateRage(dt);
+    // a fender bender with another NPC: both stop and argue
+    this.argueCd -= dt;
+    const other = car.lastImpactBy;
+    if (car.lastImpact > 3 && other && other !== this.game.player.car && other.controller instanceof Driver && this.argueCd <= 0 && this.state === 'drive') {
+      this.startArgue(other);
+      if (other.controller.state === 'drive' && other.controller.argueCd <= 0) other.controller.startArgue(car);
+    }
+    if (this.state === 'argue') return this.updateArgue(dt);
+    if (this.state === 'dpark') {
+      // double-parked delivery: hazards on, engine running
+      this.dpT -= dt;
+      car.sys.hazard = true;
+      this.setInputs(0, 1, 0);
+      if (this.dpT <= 0) {
+        car.sys.hazard = false;
+        this.state = 'drive';
+      }
+      return;
+    }
+    if (this.state === 'rage' || this.state === 'confront') return this.updateRage(dt);
     if (this.state === 'shaken') {
       this.shakenT -= dt;
       this.setInputs(0, 0.8, 0);
@@ -423,7 +560,28 @@ export class Driver {
         vCurve = Math.min(vCurve, Math.sqrt(vAllowed * vAllowed + 2 * 2.5 * dist));
       }
     }
-    const v0 = Math.max(3, Math.min(limit, vCurve));
+    let v0 = Math.max(3, Math.min(limit, vCurve));
+    // speed bumps: slow to a crawl
+    for (const bp of this.city.bumps || []) {
+      const dx = bp.x - p.x, dz = bp.z - p.z;
+      if (dx * dx + dz * dz < 22 * 22 && (dx * b.velocity.x + dz * b.velocity.z) > 0) v0 = Math.min(v0, this.persona === 'racer' ? 8 : 4.5);
+    }
+    // pull over for sirens
+    if ((this.frame || 0) % 10 === 0) this.checkSirens();
+    if (this.yieldT > 0) {
+      this.yieldT -= dt;
+      v0 = Math.min(v0, 2.2);
+    }
+    this.yieldShift += ((this.yieldT > 0 ? 2.2 : 0) - this.yieldShift) * Math.min(1, dt * 1.5);
+    // a delivery van may double-park for a while
+    this.dpCd -= dt;
+    if (this.dpCd <= 0) {
+      this.dpCd = 90 + Math.random() * 120;
+      if (car.cfg.body === 'van' && this.persona === 'normal' && v > 4 && this.bLane === 1 && seg && !car.sirenOn && seg.stopDist - (this.bDist || 0) > 30) {
+        this.state = 'dpark';
+        this.dpT = 14 + Math.random() * 12;
+      }
+    }
     // leader & stop line
     if ((this.frame = (this.frame || 0) + 1) % 2 === 0) this.findLeader();
     const stopGap = this.stopLineGap(v);
@@ -433,7 +591,7 @@ export class Driver {
       vL = 0;
     }
     // IDM
-    const a = 2.2, bb = 3.2, s0 = 2.2;
+    const a = 2.2 * this.accelMul, bb = 3.2, s0 = 2.2;
     let acc = a * (1 - Math.pow(v / v0, 4));
     if (gap < 80) {
       const dv = v - vL;
@@ -450,9 +608,23 @@ export class Driver {
       thr = 0;
       brk = 0.45;
     }
+    // drunks tap the brakes for no reason
+    if (this.persona === 'drunk' && Math.random() < dt * 0.06) this.tapT = 0.5;
+    if (this.tapT > 0) {
+      this.tapT -= dt;
+      thr = 0;
+      brk = Math.max(brk, 0.55);
+    }
     // pure pursuit
     const Ld = clamp(3.5 + v * 0.45, 4.5, 16);
     this.pointAt(this.sCar + Ld, _v);
+    // lateral offsets: yielding to the kerb, drunken weaving
+    const lat = this.yieldShift + (this.weave ? Math.sin(this.city.time * 0.55 + car.id) * this.weave : 0);
+    if (lat) {
+      const tl = Math.hypot(_v.tx, _v.tz) || 1;
+      _v.x += (-_v.tz / tl) * lat;
+      _v.z += (_v.tx / tl) * lat;
+    }
     b.toLocalPoint(_v.setY(p.y), _v2);
     const L2 = _v2.x * _v2.x + _v2.z * _v2.z;
     const kappa = (2 * _v2.x) / Math.max(L2, 1);
@@ -460,6 +632,7 @@ export class Driver {
     const steer = clamp(-delta / car.tuning.maxSteer, -1, 1);
     this.steerCmd += (steer - this.steerCmd) * Math.min(1, dt * 10);
     this.setInputs(thr, brk, this.steerCmd);
+    if (this.stopPass && Math.hypot(p.x - this.stopPass.to.x, p.z - this.stopPass.to.z) > 22 && this.currentSeg !== this.stopPass) this.stopPass = null;
     // indicators ahead of turns
     this.updateIndicators();
     // honking / patience / stuck
@@ -519,6 +692,18 @@ export class Driver {
         this.overtakeTried = true;
         this.overtakeAround();
       }
+    } else if (this.leader && this.leader !== player && v < 1 && this.leader.speed < 0.5 && this.leaderGap < 14 && stopGap > this.leaderGap && !this.city.signalFor(this.currentSeg || this.bSeg).startsWith('r')) {
+      // stuck behind a stopped NPC (double-parked van, breakdown, argument): honk, then go around
+      this.blocked += dt;
+      if (this.blocked > this.patience + 1 && this.honkCd <= 0) {
+        this.honk(this.blocked > 8 ? 0.8 : 0.3, this.blocked > 8);
+        this.honkCd = 3 + Math.random() * 2;
+        if (this.speechCd <= 0 && Math.random() < 0.3) this.say(HONK_LINES[Math.floor(Math.random() * HONK_LINES.length)]);
+      }
+      if (this.blocked > 5 && !this.overtakeTried) {
+        this.overtakeTried = true;
+        this.overtakeAround();
+      }
     } else {
       this.blocked = Math.max(0, this.blocked - dt * 2);
       if (this.blocked === 0) this.overtakeTried = false;
@@ -546,6 +731,68 @@ export class Driver {
       }
     }
     if (this.anger > 0.65 && this.aggression > 0.45 && this.game.settings.roadRage !== false) this.startRage();
+  }
+
+  /** Emergency vehicles approaching with sirens: slow down and move over to the kerb. */
+  checkSirens() {
+    const car = this.car;
+    if (car.sirenOn) return;
+    const me = car.body.position;
+    for (const c of this.game.cars) {
+      if (c === car || c.removed || !c.sirenOn || c.speed < 3) continue;
+      _v2.copy(c.body.position).sub(me);
+      const d = _v2.length();
+      if (d > 50) continue;
+      // closing in on us?
+      const closing = -(_v2.x * (c.body.velocity.x - car.body.velocity.x) + _v2.z * (c.body.velocity.z - car.body.velocity.z)) / Math.max(d, 1);
+      if (closing > 1 || d < 15) {
+        this.yieldT = 3;
+        return;
+      }
+    }
+  }
+
+  startArgue(other) {
+    // emergency crews and police don't stop to argue
+    if (this.car.service || this.car.police || other.service || other.police) return;
+    this.state = 'argue';
+    this.argueT = 7 + Math.random() * 6;
+    this.argueCd = 40;
+    this.argueWith = other;
+    this.car.sys.hazard = true;
+    this.speechCd = Math.random() * 1.5;
+  }
+
+  updateArgue(dt) {
+    const car = this.car;
+    this.argueT -= dt;
+    this.setInputs(0, 1, 0);
+    if (this.speechCd <= 0) this.say(ARGUE[Math.floor(Math.random() * ARGUE.length)], 'angry');
+    if (this.honkCd <= 0 && Math.random() < dt * 0.6) {
+      this.honk(0.5, true);
+      this.honkCd = 3;
+    }
+    if (this.argueT <= 0 || car.wrecked) {
+      car.sys.hazard = false;
+      this.rejoin();
+    }
+  }
+
+  /** The player flashed the hazards: an apology (or a thank-you). */
+  onApology() {
+    if (this.state === 'rage' || this.state === 'confront') {
+      this.anger = 0;
+      this.say(['Apology accepted.', 'Fine. Whatever.', 'Just be careful next time!'][Math.floor(Math.random() * 3)]);
+      this.endConfront();
+      this.rejoin();
+      return true;
+    }
+    if (this.anger > 0.15) {
+      this.anger = 0;
+      if (this.speechCd <= 0) this.say(['👍', 'No worries.', 'All good.'][Math.floor(Math.random() * 3)]);
+      return true;
+    }
+    return false;
   }
 
   honk(dur, angry) {
@@ -618,7 +865,7 @@ export class Driver {
 
   // ------------------------------------------------------------ road rage
   startRage() {
-    if (this.state === 'rage') return;
+    if (this.state === 'rage' || this.state === 'confront') return;
     this.state = 'rage';
     this.rageT = 25 + Math.random() * 25;
     this.say('THAT\'S IT!', 'angry');
@@ -630,6 +877,7 @@ export class Driver {
     const car = this.car;
     const player = this.game.player.car;
     this.rageT -= dt;
+    if (this.state === 'confront') return this.updateConfront(dt);
     if (!player || this.rageT <= 0 || car.body.position.distanceTo(player.body.position) > 140 || (this.game.police && this.game.police.heat >= 2)) {
       this.anger = 0.2;
       this.say('Hmph.', '');
@@ -639,12 +887,52 @@ export class Driver {
     const pp = player.body.position;
     const pv = player.body.velocity;
     const d = car.body.position.distanceTo(pp);
-    // tailgate spot behind the player, or ram when slow and close
     player.body.axis(2, _fwd);
-    const ram = d < 14 && (player.speed < 6 || Math.random() < 0.002 * this.aggression * 60 * dt);
-    const target = _v.copy(pp).addScaledVector(pv, 0.5);
-    if (!ram) target.addScaledVector(_fwd, -7);
-    const want = ram ? player.speed + 8 : clamp(player.speed + (d - 8) * 0.4, 0, 30);
+    _right.set(-_fwd.z, 0, _fwd.x);
+    const rel = _v2.copy(car.body.position).sub(pp);
+    const ahead = rel.dot(_fwd); // > 0: we are in front of the player
+    // both stopped close together: get out and have a word
+    if (player.speed < 0.8 && car.speed < 0.8 && d < 14 && this.game.player.mode === 'car') {
+      this.stillT = (this.stillT || 0) + dt;
+      if (this.stillT > 2 && this.game.peds) return this.startConfront(player);
+    } else this.stillT = 0;
+    // pick a tactic: tailgate, overtake and cut in, brake-check, ram
+    this.rageModeT -= dt;
+    if (this.rageModeT <= 0) {
+      if (this.rageMode === 'tail' && player.speed > 9) {
+        this.rageMode = 'pass';
+        this.rageModeT = 9;
+      } else {
+        this.rageMode = 'tail';
+        this.rageModeT = 6 + Math.random() * 6;
+      }
+    }
+    let target, want;
+    if (this.rageMode === 'pass') {
+      // overtake on the left, then swing in front
+      target = _v.copy(pp).addScaledVector(pv, 0.6).addScaledVector(_fwd, 12).addScaledVector(_right, ahead > 3 ? 0 : -3.5);
+      want = player.speed + 7;
+      if (ahead > 7 && Math.abs(rel.dot(_right)) < 1.6) {
+        this.rageMode = 'brake';
+        this.rageModeT = 0.9;
+        this.say(['HOW DO YOU LIKE IT?!', 'BRAKE CHECK!', 'HA!'][Math.floor(Math.random() * 3)], 'angry');
+      }
+    } else if (this.rageMode === 'brake') {
+      // slam the brakes right in front of the player
+      this.setInputs(0, 1, this.steerCmd * 0.5);
+      car.lightsFlash = 0.2;
+      if (this.rageModeT <= 0.05) {
+        this.rageMode = 'tail';
+        this.rageModeT = 6 + Math.random() * 6;
+      }
+      return;
+    } else {
+      // tailgate behind the player, or ram when slow and close
+      const ram = d < 14 && (player.speed < 6 || Math.random() < 0.002 * this.aggression * 60 * dt);
+      target = _v.copy(pp).addScaledVector(pv, 0.5);
+      if (!ram) target.addScaledVector(_fwd, -7);
+      want = ram ? player.speed + 8 : clamp(player.speed + (d - 8) * 0.4, 0, 30);
+    }
     this.steerTo(target, want, dt, true);
     if (this.honkCd <= 0) {
       this.honk(0.3 + Math.random() * 0.8, true);
@@ -652,6 +940,66 @@ export class Driver {
       car.lightsFlash = 0.4;
     }
     if (this.speechCd <= 0 && d < 30) this.say(INSULTS[Math.floor(Math.random() * INSULTS.length)], 'angry');
+  }
+
+  /** Stop, get out, walk to the player's window and shout. */
+  startConfront(player) {
+    const g = this.game;
+    const car = this.car;
+    this.state = 'confront';
+    this.setInputs(0, 1, 0);
+    car.phys.parkBrake = true;
+    car.body.toWorldPoint(_v.set(car.boundsMax.x + 0.6, 0, 0.3), _v);
+    const goal = player.body.toWorldPoint(new THREE.Vector3(player.boundsMax.x + 0.8, 0, 0.2), new THREE.Vector3());
+    this.confrontPed = g.peds.spawnScripted(_v.clone(), { goal, face: player, speed: 1.9, gesture: true });
+    this.confrontT = 14;
+    this.bangT = 2;
+    g.audio?.door?.(true);
+  }
+
+  updateConfront(dt) {
+    const g = this.game;
+    const car = this.car;
+    const ped = this.confrontPed;
+    const player = g.player.car;
+    this.setInputs(0, 1, 0);
+    this.confrontT -= dt;
+    if (!ped || !g.peds.list.includes(ped)) return this.endConfront(true);
+    if (ped.state === 'down' || ped.state === 'getup') return; // somebody ran them over...
+    const gone = !player || player.body.position.distanceTo(ped.pos) > 18 || g.player.mode !== 'car';
+    if (!ped.returning && (gone || this.confrontT <= 0)) {
+      ped.returning = true;
+      ped.gesture = false;
+      ped.goal = car.body.toWorldPoint(new THREE.Vector3(car.boundsMax.x + 0.6, 0, 0.3), new THREE.Vector3());
+      ped.state = 'goto';
+      g.peds.shout(ped, gone ? (g.player.mode === 'car' ? 'Yeah, drive away!' : 'Yeah, that\'s what I thought.') : 'Idiot.');
+    }
+    if (ped.returning) {
+      if (ped.state === 'idle') this.endConfront(true);
+      return;
+    }
+    if (ped.state === 'idle') {
+      this.bangT -= dt;
+      if (ped.shoutCd <= 0) g.peds.shout(ped, CONFRONT[Math.floor(Math.random() * CONFRONT.length)]);
+      if (this.bangT <= 0) {
+        // bang on the window
+        this.bangT = 2.5 + Math.random() * 2;
+        g.audio?.thump?.(ped.pos, 0.5);
+        if (player === g.player.car) g.cam.addShake?.(0.15);
+      }
+    }
+  }
+
+  endConfront(rejoin = false) {
+    const g = this.game;
+    if (this.confrontPed) g.peds?.removePed?.(this.confrontPed);
+    if (this.confrontPed) g.audio?.door?.(false);
+    this.confrontPed = null;
+    this.car.phys.parkBrake = false;
+    if (rejoin) {
+      this.anger = 0.3;
+      this.rejoin();
+    }
   }
 
   /** Drive toward a point off the lane network, avoiding buildings. */
@@ -863,6 +1211,7 @@ export class TrafficManager {
     car.sys.hazard = false;
     car.sys.ignition = 'on';
     const drv = recycle ? car.controller : new Driver(car, this);
+    drv.setPersona(car.cfg.body === 'van' ? 'normal' : pickPersona(g, this.rnd));
     drv.state = 'drive';
     drv.anger = 0;
     drv.kinV = 8;
@@ -928,14 +1277,85 @@ export class TrafficManager {
         d.kinV = Math.max(0, car.forwardSpeed);
       }
       d.update(dt);
-      // recycle far away / hopeless cars
-      const hopeless = d.state === 'wrecked' && dist > 90 && !this.visible(car.body.position);
-      if ((dist > 340 || hopeless) && d.state !== 'rage') {
+      // recycle far away / hopeless cars (unless a tow truck has claimed the wreck)
+      const hopeless = d.state === 'wrecked' && dist > 90 && !this.visible(car.body.position) && !car.towed;
+      if ((dist > 340 || hopeless) && d.state !== 'rage' && d.state !== 'confront' && !car.towed) {
         this.spawnDriver(false, car) || (car.physicsActive = false);
       }
     }
     // parked cars wake up when hit; keep them asleep otherwise
     this.spawnTimer -= dt;
+    this.updateDensity(dt);
+    this.updatePullOut(dt);
+    // the player flashing the hazards = sorry / thank you
+    const pc = g.player.car;
+    const hz = !!(pc && g.player.mode === 'car' && pc.sys.hazard);
+    if (hz && !this.prevHazard) this.onPlayerHazard(pc);
+    this.prevHazard = hz;
+  }
+
+  /** Traffic follows the clock: rush hours are busy, nights are quiet. */
+  densityFactor() {
+    const h = this.game.env.hour ?? 12;
+    if (h < 5) return 0.3;
+    if (h < 6.5) return 0.5;
+    if (h < 9.5) return 1.3; // morning rush
+    if (h < 16) return 0.9;
+    if (h < 19) return 1.35; // evening rush
+    if (h < 22) return 0.75;
+    return 0.45;
+  }
+
+  updateDensity(dt) {
+    const g = this.game;
+    this.densityT = (this.densityT || 0) - dt;
+    if (this.densityT > 0) return;
+    this.densityT = 2.5;
+    const want = Math.round(g.settings.traffic * (g.settings.trafficByTime === false ? 1 : this.densityFactor()));
+    const focus = g.player.focus;
+    if (this.drivers.length > want + 1) {
+      // retire someone far away and out of sight
+      const i = this.drivers.findIndex((d) => d.state === 'drive' && d.car.body.position.distanceTo(focus) > 160 && !this.visible(d.car.body.position));
+      if (i >= 0) {
+        const d = this.drivers[i];
+        this.drivers.splice(i, 1);
+        g.removeCar(d.car);
+      }
+    } else if (this.drivers.length < want) this.spawnDriver(false);
+  }
+
+  /** Now and then a parked car (not a police one) gets a driver and pulls out into traffic. */
+  updatePullOut(dt) {
+    const g = this.game;
+    this.pullT = (this.pullT ?? 20) - dt;
+    if (this.pullT > 0 || g.state !== 'play') return;
+    this.pullT = 25 + Math.random() * 35;
+    const focus = g.player.focus;
+    const cand = this.parked.filter((c) => !c.removed && !c.police && !c.wrecked && !c.isPlayer && !(c.ext && c.ext.alarm > 0) && c.body.position.distanceTo(focus) > 35 && c.body.position.distanceTo(focus) < 140 && c.model.lattice.totalDamage < 1);
+    if (!cand.length) return;
+    const car = cand[Math.floor(Math.random() * cand.length)];
+    this.parked.splice(this.parked.indexOf(car), 1);
+    car.parked = false;
+    car.body.sleeping = false;
+    car.physicsActive = true;
+    car.sys.ignition = 'on';
+    car.phys.pt.running = true;
+    car.phys.pt.setSelector('D');
+    car.sys.headlights = g.env.night > 0.35 ? 2 : 0;
+    const drv = new Driver(car, this);
+    drv.setPersona(pickPersona(g));
+    drv.state = 'offroad'; // finds its way out of the bay to the nearest lane
+    car.sys.indicator = 'left';
+    this.drivers.push(drv);
+  }
+
+  onPlayerHazard(pc) {
+    let calmed = 0;
+    for (const d of this.drivers) {
+      if (d.car.body.position.distanceTo(pc.body.position) > 45) continue;
+      if (d.onApology()) calmed++;
+    }
+    if (calmed) this.game.toast('🙏 Apology accepted', 'good', 2);
   }
 
   onPlayerHorn() {

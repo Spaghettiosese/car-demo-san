@@ -190,6 +190,98 @@ export class Pedestrians {
     return ped;
   }
 
+  /**
+   * A pedestrian driven by game logic instead of the sidewalk graph: walks
+   * straight to `goal`, then idles facing `face` (a car or a point).
+   * opts: { goal, face, speed, shirt, pants, hair, gesture, chase (car), uniform }
+   */
+  spawnScripted(pos, opts = {}) {
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    const uni = { cop: [0x1d2b4f, 0x141a2b, 0x111111], medic: [0xeef1f4, 0x2f4b7c, 0x2b1d0e], fire: [0xb8892a, 0x2c2c2c, 0x111111] }[opts.uniform] || null;
+    const ped = {
+      pos: pos.clone(),
+      vel: new THREE.Vector3(),
+      yaw: opts.yaw || 0,
+      kind: 'walker',
+      speed: opts.speed || 1.4,
+      state: 'goto',
+      script: true,
+      goal: (opts.goal || pos).clone(),
+      face: opts.face || null,
+      gesture: !!opts.gesture,
+      chase: opts.chase || null,
+      chaseT: 0,
+      phase: Math.random() * 6,
+      timer: 0,
+      fall: 0,
+      spin: 0,
+      shirt: opts.shirt ?? (uni ? uni[0] : pick(SHIRTS)),
+      pants: opts.pants ?? (uni ? uni[1] : pick(PANTS)),
+      skin: pick(SKIN),
+      hair: opts.hair ?? (uni ? uni[2] : pick(HAIR)),
+      height: 0.98 + Math.random() * 0.06,
+      look: 0,
+      shoutCd: 0,
+      crossing: null,
+      dog: null,
+      hurt: 0,
+    };
+    this.list.push(ped);
+    return ped;
+  }
+
+  removePed(p) {
+    const i = this.list.indexOf(p);
+    if (i >= 0) this.list.splice(i, 1);
+  }
+
+  updateScripted(p, dt) {
+    const g = this.game;
+    if (p.chase) {
+      // chasing a car on foot (a carjacked driver)
+      const c = p.chase;
+      p.chaseT += dt;
+      p.goal.copy(c.body.position);
+      const d = p.pos.distanceTo(c.body.position);
+      if (d < 3.2 && c.speed < 1.5 && p.shoutCd <= 0) {
+        this.shout(p, ['GIVE ME BACK MY CAR!', 'THIEF!', 'GET OUT OF MY CAR!'][Math.floor(Math.random() * 3)]);
+        g.audio?.thump?.(p.pos, 0.4);
+      }
+      if (d > 45 || p.chaseT > 25 || c.removed) {
+        p.chase = null;
+        p.state = 'idle';
+        p.gesture = true;
+        p.leaveT = 8;
+        this.shout(p, ['Fine! Keep it! I hope you crash!', 'Somebody call the cops!', 'My insurance will get you!'][Math.floor(Math.random() * 3)]);
+      }
+    }
+    if (p.leaveT !== undefined) {
+      p.leaveT -= dt;
+      if (p.leaveT <= 0) return this.removePed(p);
+    }
+    if (p.state === 'goto') {
+      const dx = p.goal.x - p.pos.x, dz = p.goal.z - p.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < (p.chase ? 2.2 : 0.35)) {
+        if (!p.chase) p.state = 'idle';
+      } else {
+        const want = Math.atan2(dx, dz);
+        p.yaw += wrapAngle(want - p.yaw) * Math.min(1, dt * 8);
+        const step = Math.min(d, p.speed * dt);
+        p.pos.x += (dx / d) * step;
+        p.pos.z += (dz / d) * step;
+        p.phase += step * (p.speed > 2.2 ? 3.2 : 4.2);
+      }
+    } else if (p.state === 'idle') {
+      const f = p.face && p.face.body ? p.face.body.position : p.face;
+      if (f) p.yaw += wrapAngle(Math.atan2(f.x - p.pos.x, f.z - p.pos.z) - p.yaw) * Math.min(1, dt * 5);
+      p.phase += dt * 6;
+    }
+    p.pos.y = this.groundY(p.pos);
+    if (p.look > 0) p.look -= dt;
+    this.dodgeCars(p, dt);
+  }
+
   // ------------------------------------------------------------ per frame
   update(dt) {
     const g = this.game;
@@ -200,10 +292,12 @@ export class Pedestrians {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const p = this.list[i];
       const d = p.pos.distanceTo(focus);
+      if (p.script && d < 400) continue;
       if (d > 300 || (d > 230 && p.state !== 'down')) this.list.splice(i, 1);
     }
     let guard = 0;
-    while (this.list.length < target && guard++ < 6) this.spawnNear(focus);
+    const scripted = this.list.reduce((n, p) => n + (p.script ? 1 : 0), 0);
+    while (this.list.length - scripted < target && guard++ < 6) this.spawnNear(focus);
     for (const p of this.list) this.updatePed(p, dt);
     this.render();
   }
@@ -243,9 +337,9 @@ export class Pedestrians {
       p.fall = Math.max(0, p.fall - dt * 1.2);
       p.timer -= dt;
       if (p.timer <= 0) {
-        p.state = 'walk';
+        p.state = p.script ? (p.pos.distanceTo(p.goal) > 0.6 || p.chase ? 'goto' : 'idle') : 'walk';
         this.shout(p, SHOUTS[Math.floor(Math.random() * SHOUTS.length)]);
-        p.speed *= 1.6; // storms off
+        if (!p.script) p.speed *= 1.6; // storms off
       }
       return;
     }
@@ -266,6 +360,7 @@ export class Pedestrians {
       this.dodgeCars(p, dt);
       return;
     }
+    if (p.script) return this.updateScripted(p, dt);
     // ---- walking / waiting / crossing ----
     let speed = p.speed;
     if (p.state === 'wait') {
@@ -422,7 +517,7 @@ export class Pedestrians {
       g.onPedHit?.(p, rel);
       // bystanders scream and scatter
       for (const o of this.list) {
-        if (o === p || o.state === 'down') continue;
+        if (o === p || o.state === 'down' || o.script) continue;
         if (o.pos.distanceTo(p.pos) < 18) {
           o.state = 'flee';
           o.timer = 4;
@@ -456,7 +551,7 @@ export class Pedestrians {
   onRoadNear(pos, r = 55) {
     const out = [];
     for (const p of this.list) {
-      if (p.state !== 'cross' && p.state !== 'down' && p.state !== 'dive' && p.state !== 'getup' && p.state !== 'flee') continue;
+      if (!p.script && p.state !== 'cross' && p.state !== 'down' && p.state !== 'dive' && p.state !== 'getup' && p.state !== 'flee') continue;
       if (Math.abs(p.pos.x - pos.x) > r || Math.abs(p.pos.z - pos.z) > r) continue;
       out.push(p);
     }
@@ -476,7 +571,7 @@ export class Pedestrians {
       _e.set(-p.fall * Math.PI * 0.5, p.yaw, 0, 'YXZ');
       _q.setFromEuler(_e);
       _m.compose(_p.set(p.pos.x, p.pos.y, p.pos.z), _q, _s.set(h, h, h));
-      const walk = p.state === 'walk' || p.state === 'cross' || p.state === 'flee' ? Math.sin(p.phase) : 0;
+      const walk = p.state === 'walk' || p.state === 'cross' || p.state === 'flee' || p.state === 'goto' ? Math.sin(p.phase) : 0;
       const swing = walk * (p.kind === 'jogger' || p.state === 'flee' ? 0.75 : 0.45);
       const bob = Math.abs(Math.cos(p.phase)) * 0.03;
       const lean = p.kind === 'elderly' ? 0.18 : p.kind === 'texter' ? 0.1 : p.kind === 'jogger' ? 0.12 : 0;
@@ -488,7 +583,8 @@ export class Pedestrians {
       this.part(I.legR, n, _m, -0.1, 0.84 + bob, 0, -swing, 0, p.pants);
       const texting = p.kind === 'texter' && p.state === 'walk';
       this.part(I.armL, n, _m, 0.26, 1.38 + bob, lean * 0.5, texting ? -1.1 : -swing * 0.9, 0, p.shirt);
-      this.part(I.armR, n, _m, -0.26, 1.38 + bob, lean * 0.5, p.state === 'down' ? 1.4 : -1 * -swing * 0.9, 0, p.shirt);
+      const fist = p.gesture && p.state === 'idle' ? -2.5 + Math.sin(p.phase * 2) * 0.35 : null;
+      this.part(I.armR, n, _m, -0.26, 1.38 + bob, lean * 0.5, p.state === 'down' ? 1.4 : fist ?? -1 * -swing * 0.9, 0, p.shirt);
       n++;
       if (p.dog && nd < 30) {
         const dg = p.dog;

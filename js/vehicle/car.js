@@ -681,6 +681,7 @@ export class Car {
     // police bar
     if (m.details.lightbar) {
       const lb = m.details.lightbar;
+      if (this.unmarked) lb.group.visible = !!this.sirenOn; // hidden lights on unmarked cars
       if (this.sirenOn) {
         const ph = (time * 3.2) % 1;
         const strobe = ((time * 14) | 0) % 2;

@@ -168,7 +168,11 @@ export class Game {
     const post = await tryImport('./post.js');
     if (post) this.post = new post.PostFX(this.renderer, this.scene, this.camera, this.settings);
     const audio = await tryImport('./audio/audio.js');
-    if (audio) this.audio = new audio.AudioEngine(this);
+    if (audio) {
+      this.audio = new audio.AudioEngine(this);
+      // thunder rolls in after the flash, delayed by the strike's distance
+      this.env.onThunder = (d) => this.audio.thunder(d);
+    }
     progress(0.65, 'Teaching drivers the road rules…');
     const traffic = await tryImport('./ai/traffic.js');
     if (traffic) this.traffic = new traffic.TrafficManager(this);
@@ -188,6 +192,8 @@ export class Game {
     if (this.traffic) this.traffic.init();
     const peds = await tryImport('./ai/pedestrians.js');
     if (peds) this.peds = new peds.Pedestrians(this);
+    const svc = await tryImport('./ai/services.js');
+    if (svc) this.services = new svc.Services(this);
     const dealer = await tryImport('./ui/dealer.js');
     if (dealer) this.dealer = new dealer.Dealer(this);
     const phone = await tryImport('./ui/phone.js');
@@ -613,6 +619,7 @@ export class Game {
       const wind = this.env.wind;
       if (wind) for (const c of this.cars) if (c.physicsActive) c.phys.wind.copy(wind);
       this.traffic?.update(sim);
+      this.services?.update(sim);
       this.peds?.update(sim);
       this.police?.update(sim);
       this.physics.step(sim, this.cars);

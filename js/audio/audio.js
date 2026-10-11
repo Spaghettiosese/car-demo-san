@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../core/util.js';
 import { Radio } from './radio.js';
+import { installExtras } from './extras.js';
 
 // ------------------------------------------------------------------ synthesis helpers
 const ENGINE_PROFILES = {
@@ -125,6 +126,19 @@ function clickBuffer(ctx, f, dur = 0.02) {
 }
 
 // ------------------------------------------------------------------ engine voice (player)
+/** Electric motor whine for NPC EVs: a few harmonics plus a little hiss. */
+function whineBuffer(ctx) {
+  const sr = ctx.sampleRate;
+  const len = Math.round(sr * 1);
+  const buf = ctx.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
+    d[i] = Math.sin(6.283 * 620 * t) * 0.5 + Math.sin(6.283 * 1240 * t) * 0.25 + Math.sin(6.283 * 1860 * t) * 0.1 + (Math.random() * 2 - 1) * 0.08;
+  }
+  return buf;
+}
+
 class PlayerEngine {
   constructor(audio, car) {
     this.audio = audio;
@@ -317,20 +331,29 @@ class NpcVoice {
     const ctx = audio.ctx;
     this.audio = audio;
     this.panner = audio.makePanner(6, 1.3);
-    this.src = ctx.createBufferSource();
-    this.src.buffer = audio.npcEngineBuf;
-    this.src.loop = true;
     this.filter = ctx.createBiquadFilter();
     this.filter.type = 'lowpass';
     this.filter.frequency.value = 1200;
     this.g = ctx.createGain();
     this.g.gain.value = 0;
-    this.src.connect(this.filter);
     this.filter.connect(this.g);
     this.g.connect(this.panner);
     this.panner.connect(audio.worldBus);
-    this.src.start(0, Math.random());
+    this.src = null;
+    this.kind = null;
     this.car = null;
+  }
+  /** Each car sounds like its own engine: swap the loop when the voice moves to another car. */
+  setKind(kind) {
+    if (kind === this.kind) return;
+    this.kind = kind;
+    if (this.src) try { this.src.stop(); } catch (e) { /* */ }
+    const ctx = this.audio.ctx;
+    this.src = ctx.createBufferSource();
+    this.src.buffer = this.audio.npcBufs[kind] || this.audio.npcEngineBuf;
+    this.src.loop = true;
+    this.src.connect(this.filter);
+    this.src.start(0, Math.random());
   }
   update(t) {
     const c = this.car;
@@ -339,10 +362,19 @@ class NpcVoice {
       return;
     }
     const pt = c.phys.pt;
+    const ev = pt.spec.type === 'ev';
+    this.setKind(ev ? 'ev' : pt.spec.sound || c.cfg.engine || 'v6');
     const p = c.body.position;
     this.audio.setPannerPos(this.panner, p);
+    const dop = this.audio.doppler ? this.audio.doppler(p, c.body.velocity) : 1;
+    if (ev) {
+      this.src.playbackRate.setTargetAtTime(clamp(0.35 + c.speed / 22, 0.3, 2.4) * dop, t, 0.05);
+      this.g.gain.setTargetAtTime(clamp(c.speed / 25, 0, 1) * 0.05 + pt.throttle * 0.04, t, 0.08);
+      this.filter.frequency.setTargetAtTime(2500, t, 0.1);
+      return;
+    }
     const rpm = c.physicsActive ? pt.rpm : 900 + c.speed * 60;
-    this.src.playbackRate.setTargetAtTime(clamp(rpm / 2800, 0.25, 2.6), t, 0.05);
+    this.src.playbackRate.setTargetAtTime(clamp(rpm / 2800, 0.25, 2.6) * dop, t, 0.05);
     const on = pt.running || !c.physicsActive;
     this.g.gain.setTargetAtTime(on ? 0.25 + pt.throttle * 0.35 : 0, t, 0.08);
     this.filter.frequency.setTargetAtTime(600 + rpm * 0.5 + pt.throttle * 1500, t, 0.1);
@@ -391,8 +423,9 @@ class Siren {
     if (this.mode === 0) f = 950 + Math.sin(this.phase * 1.6) * 450; // wail
     else if (this.mode === 1) f = 950 + Math.sin(this.phase * 22) * 420; // yelp
     else f = 700 + ((this.phase * 14) % 1) * 900; // hi-lo phaser
-    this.osc.frequency.setTargetAtTime(f, t, 0.01);
-    this.osc2.frequency.setTargetAtTime(f * 1.005, t, 0.01);
+    const dop = this.audio.doppler ? this.audio.doppler(c.body.position, c.body.velocity) : 1;
+    this.osc.frequency.setTargetAtTime(f * dop, t, 0.01);
+    this.osc2.frequency.setTargetAtTime(f * 1.005 * dop, t, 0.01);
   }
 }
 
@@ -458,6 +491,7 @@ export class AudioEngine {
     this.tick = clickBuffer(ctx, 2600, 0.015);
     this.tock = clickBuffer(ctx, 1900, 0.018);
     this.npcEngineBuf = engineBuffer(ctx, 'v6', 6, 2800, true);
+    this.npcBufs = { v6: this.npcEngineBuf, i4: engineBuffer(ctx, 'i4', 4, 2800, true), v8: engineBuffer(ctx, 'v8', 8, 2800, true), i6: engineBuffer(ctx, 'i6', 6, 2800, true), ev: whineBuffer(ctx) };
     // continuous layers
     this.road = this.loopNoise(this.brown, 'lowpass', 260, 0.7, this.sfxBus);
     this.wind = this.loopNoise(this.pink, 'bandpass', 700, 0.6, this.sfxBus);
@@ -473,6 +507,7 @@ export class AudioEngine {
     // player horn
     this.horn = this.makeHorn(this.game.player.car?.cfg.horn || 'dual', this.sfxBus);
     this.radio = new Radio(this);
+    this.setupExtras();
     this.ready = true;
     if (this.game.player.car) this.setPlayerCar(this.game.player.car);
   }
@@ -673,10 +708,20 @@ export class AudioEngine {
   }
   chime(kind) {
     if (!this.ready) return;
+    const seq = (notes, step = 0.09, gain = 0.07, type = 'sine') => notes.forEach((f, i) => setTimeout(() => this.tone(f, 0.35, { gain, type }), i * step * 1000));
     if (kind === 'belt') {
       this.tone(1050, 0.35, { gain: 0.08 });
       setTimeout(() => this.tone(1050, 0.35, { gain: 0.08 }), 400);
-    } else this.tone(880, 0.5, { gain: 0.07 });
+    } else if (kind === 'achievement') seq([784, 988, 1175, 1568], 0.08, 0.06, 'triangle');
+    else if (kind === 'level') seq([523, 659, 784, 1047, 784, 1047], 0.11, 0.07, 'triangle');
+    else if (kind === 'medal') seq([659, 831, 988, 1319], 0.1, 0.07, 'triangle');
+    else if (kind === 'event') seq([880, 1320], 0.12, 0.06);
+    else if (kind === 'message') seq([1320, 990], 0.1, 0.05);
+    else if (kind === 'pickup') seq([1568, 2093, 2637], 0.05, 0.05);
+    else if (kind === 'ready') seq([740, 988], 0.12, 0.05);
+    else if (kind === 'fuel') this.tone(660, 0.6, { gain: 0.06 });
+    else if (kind === 'ignition') this.tone(1170, 0.4, { gain: 0.05 });
+    else this.tone(880, 0.5, { gain: 0.07 });
   }
   buckle(on) {
     if (!this.ready) return;
@@ -689,6 +734,9 @@ export class AudioEngine {
   }
   door(open) {
     if (!this.ready) return;
+    const car = this.game.player.car;
+    // key left in the ignition: ding-ding-ding
+    if (open && car && car.sys.ignition !== 'off' && this.ex) this.ex.chimeT = 2.4;
     if (open) this.play(this.tock, { gain: 0.8, rate: 0.35 });
     else {
       this.tone(70, 0.2, { type: 'triangle', gain: 0.5, slide: -30 });
@@ -821,6 +869,11 @@ export class AudioEngine {
         else if (ev.type === 'shift') this.gearClunk();
         else if (ev.type === 'start') this.tone(60, 0.4, { type: 'sawtooth', gain: 0.05, slide: 40 });
         else if (ev.type === 'stall') this.clunk(car, 0.3);
+        else if (ev.type === 'grind') this.grind();
+        else if (ev.type === 'click') this.click();
+        else if (ev.type === 'ready') this.chime('ready');
+        else if (ev.type === 'hydrolock') this.clunk(car, 1);
+        else if (ev.type === 'knock') this.play(this.tock, { gain: 0.4, rate: 0.4 });
       }
       car.phys.pt.events.length = 0;
       // tires
@@ -863,7 +916,7 @@ export class AudioEngine {
       this.hornWasOn = hornOn;
       // indicator relay
       const blink = car.sys.blinkOn;
-      if ((car.sys.indicator !== 'none' || car.sys.hazard) && blink !== this.lastBlink) this.play(blink ? this.tick : this.tock, { gain: interior ? 0.35 : 0.1 });
+      if ((car.sys.indicator !== 'none' || car.sys.hazard) && blink !== this.lastBlink) this.relay(car, blink, interior);
       this.lastBlink = blink;
     }
     // rain & city ambience
@@ -883,6 +936,7 @@ export class AudioEngine {
       const allCops = [...cops, ...farCops];
       this.sirens.forEach((sv, i) => (sv.car = allCops[i] || null));
     }
+    this.updateExtras(dt);
     for (const v of this.npcVoices) v.update(t);
     for (const sv of this.sirens) sv.update(dt, t);
     this.radio?.update(dt, interior, inCar);
@@ -900,3 +954,5 @@ export class AudioEngine {
     h.g.gain.setTargetAtTime(on ? 0.12 : 0, t, 0.012);
   }
 }
+
+installExtras(AudioEngine);

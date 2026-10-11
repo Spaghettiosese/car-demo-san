@@ -127,6 +127,11 @@ export class OnFoot {
         car.controller = null;
         g.hud.say(car.body.position, ['HEY! MY CAR!', 'THIEF!', 'Somebody call the police!'][Math.floor(Math.random() * 3)], 'angry', 3);
         g.police?.offense?.('carjack');
+        // the driver tumbles out and runs after you
+        if (g.peds && !car.police) {
+          const door = car.body.toWorldPoint(new THREE.Vector3(car.boundsMax.x + 0.9, 0, 0.2), new THREE.Vector3());
+          g.peds.spawnScripted(door, { chase: car, speed: 3.6, gesture: true });
+        }
       } else if (car.police) g.police?.offense?.('carjack', true);
       if (car.parked && car.ext) {
         // parked cars are locked: smash the window, set off the alarm
@@ -135,6 +140,7 @@ export class OnFoot {
         car.ext.alarm = 25;
         g.police?.offense?.('carjack');
       }
+      car.stolen = true; // not your car: the registration won't match at a traffic stop
       if (car.parked) car.parked = false;
       if (old) {
         old.isPlayer = false;

@@ -66,7 +66,7 @@ export class StaticWorld {
     const k = key(ix, iz);
     let c = this.cells.get(k);
     if (!c && create) {
-      c = { boxes: [], slabs: [], ramps: [], cylinders: [] };
+      c = { boxes: [], slabs: [], ramps: [], cylinders: [], dips: [] };
       this.cells.set(k, c);
     }
     return c;
@@ -132,6 +132,13 @@ export class StaticWorld {
     return r;
   }
 
+  /** A shallow dip in the ground (potholes, manhole covers). */
+  addDip(x, z, r, depth) {
+    const d = { x, z, r, depth };
+    this._insert('dips', d, x - r, z - r, x + r, z + r);
+    return d;
+  }
+
   addCylinder(x, z, radius, y0, y1, opts = {}) {
     const c = { x, z, r: radius, y0, y1, kind: opts.kind || 'pole', ref: opts.ref || null, mat: opts.mat || MATERIALS.metal, stamp: 0 };
     this.cylinders.push(c);
@@ -165,6 +172,13 @@ export class StaticWorld {
     }
     const c = this._cell(Math.floor(x / CELL), Math.floor(z / CELL), false);
     const lim = yRef + step;
+    if (c && c.dips.length) {
+      for (let i = 0; i < c.dips.length; i++) {
+        const d = c.dips[i];
+        const dx = x - d.x, dz = z - d.z, r2 = dx * dx + dz * dz;
+        if (r2 < d.r * d.r) y -= d.depth * (1 - r2 / (d.r * d.r)) ** 0.5;
+      }
+    }
     if (c) {
       const slabs = c.slabs;
       for (let i = 0; i < slabs.length; i++) {

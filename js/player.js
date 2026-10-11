@@ -85,7 +85,8 @@ export class PlayerDriver {
       }
     } else {
       // H-pattern: number keys pick a gear directly
-      for (let g = 1; g <= 7; g++) if (input.pressed('gear' + g) && g <= pt.gearCount) pt.shiftTo(g);
+      const talking = this.game?.police?.stop; // number keys answer the officer during a traffic stop
+      if (!talking) for (let g = 1; g <= 7; g++) if (input.pressed('gear' + g) && g <= pt.gearCount) pt.shiftTo(g);
       if (input.pressed('gearR')) {
         if (fwd > 2) this.game.toast?.('Too fast for reverse');
         else pt.shiftTo(-1);

@@ -6,7 +6,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F001 EV start: hold brake and press START (or the key), READY lamp on the cluster
 - [x] F002 EV battery that drains with use; state of charge and range on the cluster
 - [x] F003 EV regenerative braking with adjustable levels (0–3)
-- [ ] F004 EV pedestrian-warning hum at low speed
+- [x] F004 EV pedestrian-warning hum at low speed
 - [x] F005 EV chargers at the Fuel Stop (charge over time, paid in career)
 - [x] F006 Clutch pedal input (key and gamepad) for manual cars
 - [x] F007 Direct gear selection keys (1–6, R) for the manual gearbox
@@ -35,7 +35,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F030 Battery and alternator simulation (state of charge, voltage)
 - [x] F031 A flat battery from lights or radio left on with the engine off: slow crank, then no crank
 - [x] F032 Jump-start from another car on foot
-- [ ] F033 Fuel-pump prime sound at ON
+- [x] F033 Fuel-pump prime sound at ON
 - [x] F034 Engine floods after long cranking
 - [x] F035 Cold start: fast idle and warm-up
 - [ ] F036 Manual choke on the classic car
@@ -53,16 +53,16 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F048 Horn sticks on after heavy front damage
 - [x] F049 Dome light comes on automatically when the door opens
 - [x] F050 Sun glare when facing a low sun; the sun visor blocks it
-- [ ] F051 Glovebox registration used in police traffic stops
+- [x] F051 Glovebox registration used in police traffic stops
 - [x] F052 Phone mount on the dashboard showing the phone screen
 - [x] F053 Steering self-centring and weight from tyre aligning torque
 - [x] F054 Gamepad rumble (slip, ABS, curbs, impacts)
 - [ ] F055 Steering wheel device support with rotation calibration
-- [ ] F056 Hazard "thank you" double blink calms the car behind
+- [x] F056 Hazard "thank you" double blink calms the car behind
 - [x] F057 Electronic parking brake button on modern cars
 - [x] F058 Key fob: remote lock and unlock with a blink and a chirp
 - [x] F059 Car alarm when a parked car is bumped or broken into
-- [ ] F060 Cooling fan runs on after shutdown, with exhaust tick
+- [x] F060 Cooling fan runs on after shutdown, with exhaust tick
 
 ## B. Mechanical, physics and damage (61–100)
 - [x] F061 Tyre temperature affects grip
@@ -90,7 +90,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F083 Metal fatigue from repeated hard landings
 - [x] F084 Driver health and injury from crashes
 - [ ] F085 Unbelted injuries: blur, tinnitus, ejection through a broken windshield
-- [ ] F086 Aquaplaning in standing water
+- [x] F086 Aquaplaning in standing water
 - [x] F087 Wind gusts push tall vehicles
 - [x] F088 Water physics: buoyancy, drag, sinking
 - [x] F089 Hydrolocked engine after driving into deep water
@@ -227,22 +227,22 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F212 Rocks and boulders
 - [x] F213 Distance LOD for terrain and cars
 - [x] F214 Dirt rally trail in the hills
-- [ ] F215 Four-way stop intersections
-- [ ] F216 Speed bumps
-- [ ] F217 Potholes and manhole covers
-- [ ] F218 A one-way street
+- [x] F215 Four-way stop intersections
+- [x] F216 Speed bumps
+- [x] F217 Potholes and manhole covers
+- [x] F218 A one-way street
 - [x] F219 Roundabout at the harbor entrance
 - [x] F220 EV chargers at the gas station (world props)
 - [ ] F221 Weather that changes over time
-- [ ] F222 Puddles in the rain
+- [x] F222 Puddles in the rain
 - [ ] F223 Wind (swaying trees, flags)
 - [ ] F224 Snow weather with low grip
 - [ ] F225 A rainbow after rain
 - [ ] F226 Shooting stars at night
 - [ ] F227 Street lights switch on one by one at dusk
 - [ ] F228 Animated billboards
-- [ ] F229 Ambient sound by district (park, downtown, beach, harbor)
-- [ ] F230 Seagulls at the beach and harbor
+- [x] F229 Ambient sound by district (park, downtown, beach, harbor)
+- [x] F230 Seagulls at the beach and harbor
 - [ ] F231 Bird flocks over the park
 - [ ] F232 Boats moving on the sea
 - [ ] F233 Ambient plane and helicopter flyovers
@@ -255,63 +255,63 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [ ] F240 Fireworks over the harbor at night
 
 ## G. Traffic and police AI (241–275)
-- [ ] F241 Traffic yields to sirens
-- [ ] F242 Ambulance responds to big crashes
-- [ ] F243 Tow truck clears wrecks
-- [ ] F244 Fire truck responds to car fires
-- [ ] F245 Driver personalities: learner, elderly, boy-racer, drunk at night
+- [x] F241 Traffic yields to sirens
+- [x] F242 Ambulance responds to big crashes
+- [x] F243 Tow truck clears wrecks
+- [x] F244 Fire truck responds to car fires
+- [x] F245 Driver personalities: learner, elderly, boy-racer, drunk at night
 - [ ] F246 City buses with stops
-- [ ] F247 Delivery vans that double-park
-- [ ] F248 NPC-vs-NPC crashes and arguments
-- [ ] F249 NPCs honk at each other
+- [x] F247 Delivery vans that double-park
+- [x] F248 NPC-vs-NPC crashes and arguments
+- [x] F249 NPCs honk at each other
 - [ ] F250 Voiced NPC lines
-- [ ] F251 Road-rage brake checking
-- [ ] F252 Road-rage cut-offs
-- [ ] F253 Ragers get out to confront you
-- [ ] F254 An apology (hazard flash) calms ragers
-- [ ] F255 Parked cars pull out into traffic
-- [ ] F256 A carjacked driver chases you on foot
-- [ ] F257 NPC engine sound matches their engine
-- [ ] F258 AI handles four-way stops (first come, first served)
-- [ ] F259 Rush-hour traffic density by time of day
-- [ ] F260 Thinner traffic at night
-- [ ] F261 Interactive traffic stop (pull over, window, registration)
-- [ ] F262 New offences: no seatbelt, no headlights at night, running a stop sign, wrong way
-- [ ] F263 Police helicopter with a spotlight at 4+ stars
-- [ ] F264 Police scanner radio station
-- [ ] F265 Officers get out at roadblocks and busts
-- [ ] F266 Police dispatch callouts on the HUD
-- [ ] F267 Speed camera flash
-- [ ] F268 Respraying your car lowers your heat
-- [ ] F269 Hide in garages to cool off
-- [ ] F270 Unmarked police cars
-- [ ] F271 Cash bonus for escaping pursuits in career
-- [ ] F272 Pay fines from the phone
-- [ ] F273 Racing AI rubber-band difficulty
-- [ ] F274 Broken-down AI turns on its hazard lights
-- [ ] F275 Broken-down cars on the roadside
+- [x] F251 Road-rage brake checking
+- [x] F252 Road-rage cut-offs
+- [x] F253 Ragers get out to confront you
+- [x] F254 An apology (hazard flash) calms ragers
+- [x] F255 Parked cars pull out into traffic
+- [x] F256 A carjacked driver chases you on foot
+- [x] F257 NPC engine sound matches their engine
+- [x] F258 AI handles four-way stops (first come, first served)
+- [x] F259 Rush-hour traffic density by time of day
+- [x] F260 Thinner traffic at night
+- [x] F261 Interactive traffic stop (pull over, window, registration)
+- [x] F262 New offences: no seatbelt, no headlights at night, running a stop sign, wrong way
+- [x] F263 Police helicopter with a spotlight at 4+ stars
+- [x] F264 Police scanner radio station
+- [x] F265 Officers get out at roadblocks and busts
+- [x] F266 Police dispatch callouts on the HUD
+- [x] F267 Speed camera flash
+- [x] F268 Respraying your car lowers your heat
+- [x] F269 Hide in garages to cool off
+- [x] F270 Unmarked police cars
+- [x] F271 Cash bonus for escaping pursuits in career
+- [x] F272 Pay fines from the phone
+- [x] F273 Racing AI rubber-band difficulty
+- [x] F274 Broken-down AI turns on its hazard lights
+- [x] F275 Broken-down cars on the roadside
 
 ## H. Audio (276–295)
-- [ ] F276 Brake squeal
-- [ ] F277 Suspension clunks over big bumps
-- [ ] F278 Damage rattles
-- [ ] F279 Engine knock when the engine is damaged
-- [ ] F280 Radiator cooling fan
-- [ ] F281 Exhaust tick after shutdown
-- [ ] F282 Doppler on passing cars and sirens
-- [ ] F283 Distinct gravel and sand tyre sounds
-- [ ] F284 Wind gust audio
-- [ ] F285 Waves and sea ambience
-- [ ] F286 Seagulls and birdsong
-- [ ] F287 Gear grind sound
-- [ ] F288 Each car has its own indicator relay sound
-- [ ] F289 Seatbelt click and door-open chime
-- [ ] F290 Static between radio stations while tuning
-- [ ] F291 Radio volume knob
-- [ ] F292 Police scanner chatter
+- [x] F276 Brake squeal
+- [x] F277 Suspension clunks over big bumps
+- [x] F278 Damage rattles
+- [x] F279 Engine knock when the engine is damaged
+- [x] F280 Radiator cooling fan
+- [x] F281 Exhaust tick after shutdown
+- [x] F282 Doppler on passing cars and sirens
+- [x] F283 Distinct gravel and sand tyre sounds
+- [x] F284 Wind gust audio
+- [x] F285 Waves and sea ambience
+- [x] F286 Seagulls and birdsong
+- [x] F287 Gear grind sound
+- [x] F288 Each car has its own indicator relay sound
+- [x] F289 Seatbelt click and door-open chime
+- [x] F290 Static between radio stations while tuning
+- [x] F291 Radio volume knob
+- [x] F292 Police scanner chatter
 - [ ] F293 Spoken GPS turn-by-turn prompts
-- [ ] F294 Rain on the roof, heard in the cockpit
-- [ ] F295 Thunder arrives after the lightning, delayed by its distance
+- [x] F294 Rain on the roof, heard in the cockpit
+- [x] F295 Thunder arrives after the lightning, delayed by its distance
 
 ## I. Camera, photo and replay (296–315)
 - [ ] F296 Replay system (ring buffer of the last 30 s)
@@ -346,18 +346,18 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [ ] F323 Colour-blind-friendly HUD palette
 - [ ] F324 HUD scale
 - [ ] F325 Subtitles for radio and speech
-- [ ] F326 Big map with zoom and pan
+- [x] F326 Big map with zoom and pan
 - [x] F327 Map legend and filters
-- [ ] F328 GPS route to any point of interest
+- [x] F328 GPS route to any point of interest
 - [ ] F329 Turn-by-turn arrow on the HUD
 - [ ] F330 Speed-limit sign on the HUD
 - [ ] F331 Speedometer styles
 - [ ] F332 Telemetry throttle and brake trace graph
 - [ ] F333 Detailed damage report panel
-- [ ] F334 Notification feed
+- [x] F334 Notification feed
 - [ ] F335 Step-by-step tutorial
 - [ ] F336 Loading-screen tips
-- [ ] F337 Pause menu: resume, restart or quit the event
+- [x] F337 Pause menu: resume, restart or quit the event
 - [ ] F338 Frame-time graph overlay
 - [ ] F339 Dynamic resolution scaling
 - [ ] F340 View distance setting

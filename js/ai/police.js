@@ -5,6 +5,8 @@ import { Driver, randomPlate } from './traffic.js';
 import { nearestNode, nodePath } from './gps.js';
 import { clamp, KMH } from '../core/util.js';
 import { CITY } from '../world/city.js';
+import { PoliceHeli } from './heli.js';
+import { scannerLine } from '../audio/radio.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -29,14 +31,19 @@ const OFFENSES = {
   suspended: { heat: 1, fine: 800, text: 'Driving with a suspended licence' },
 };
 
-function copConfig(heavy) {
+function copConfig(heavy, unmarked = false) {
   const cfg = configForBody(heavy ? 'suv' : 'sedan', DEFAULT_CONFIG);
   Object.assign(cfg, {
     paint: '#f4f4f4', livery: 'police', finish: 'gloss', engine: 'v8', turbo: heavy ? 'none' : 'small', tune: 2, drivetrain: heavy ? 'awd' : 'rwd',
     wheelStyle: 'steel', wheelColor: '#1d1d1f', tire: 'sport', plate: 'SDPD ' + Math.floor(10 + Math.random() * 89), exhaust: 'sport', abs: true, tcs: true,
   });
+  // unmarked: plain dark paint and plates, lights hidden until they light you up
+  if (unmarked) Object.assign(cfg, { paint: ['#22252b', '#3a3f47', '#1b2433'][Math.floor(Math.random() * 3)], livery: 'none', finish: 'metallic', plate: randomPlate(), wheelStyle: 'fivespoke', wheelColor: '#2a2b2e' });
   return cfg;
 }
+
+// hideouts: covered spots where the police lose sight of you
+const HIDE_R = 7;
 
 // ================================================================== cop AI
 export class CopDriver extends Driver {
@@ -168,6 +175,51 @@ export class PoliceManager {
     this.roadblockT = 0;
     this.offenseCd = {};
     this.dispatchT = 0;
+    this.heli = null;
+    this.heliLowT = 0;
+    this.calloutCd = 0;
+    this.stop = null;
+    this.officers = [];
+  }
+
+  /** Short radio callout on the HUD (rate-limited). */
+  callout(text) {
+    const g = this.game;
+    if (this.calloutCd > 0) return;
+    this.calloutCd = 7;
+    g.hud.notify?.('📻 SDPD Dispatch', text || scannerLine(g), '', 4.5);
+    g.audio?.radioChatter?.();
+  }
+
+  /** Covered places where nobody can see you: the customs workshop bay and the car wash tunnel. */
+  hidden(p) {
+    const g = this.game;
+    const spots = [];
+    const L = g.city.locations;
+    if (L.garage) spots.push(L.garage.pos);
+    const cw = g.city.carWash;
+    if (cw && p.x > cw.x0 - 0.5 && p.x < cw.x1 + 0.5 && p.z > cw.z0 && p.z < cw.z1) return true;
+    return spots.some((q) => Math.hypot(p.x - q.x, p.z - q.z) < HIDE_R);
+  }
+
+  /** New paint at the garage: if nobody saw you go in, the police lose your description. */
+  onRespray() {
+    const g = this.game;
+    if (this.heat <= 0) return false;
+    if (this.cops.some((c) => c.mode !== 'patrol' && !c.car.removed && c.car.body.position.distanceTo(g.player.focus) < 35)) {
+      g.toast('The cops saw you go in. A new paint job won\'t fool them.', 'warn', 3);
+      return false;
+    }
+    this.heat = 0;
+    this.evade = 0;
+    this.offenses.length = 0;
+    for (const c of this.cops) if (c.mode !== 'patrol') {
+      c.mode = 'patrol';
+      c.rejoin();
+    }
+    g.toast('🎨 New paint, new car: the police have lost your description.', 'good', 4);
+    g.onPursuitEnd?.('escaped', 1);
+    return true;
   }
 
   get enabled() {
@@ -205,9 +257,10 @@ export class PoliceManager {
     return g.onFoot ? { body: { position: g.onFoot.position, velocity: new THREE.Vector3(), axis: (i, o) => o.set(Math.sin(g.onFoot.yaw), 0, Math.cos(g.onFoot.yaw)) }, speed: 0 } : null;
   }
 
-  makeCop(heavy, pos, yaw) {
+  makeCop(heavy, pos, yaw, unmarked = false) {
     const g = this.game;
-    const car = new Car(g, copConfig(heavy), { npc: true, police: true });
+    const car = new Car(g, copConfig(heavy, unmarked), { npc: true, police: true });
+    car.unmarked = unmarked;
     car.phys.gripScale = 1.08;
     car.placeAt(pos.x, 0, pos.z, yaw);
     car.phys.pt.running = true;
@@ -226,7 +279,8 @@ export class PoliceManager {
     while (this.cops.filter((c) => c.mode === 'patrol').length < want && tries++ < 20) {
       const s = g.city.randomLaneSpot();
       if (s.pos.distanceTo(g.player.focus) < 60) continue;
-      const d = this.makeCop(false, s.pos, s.yaw);
+      const unmarked = !this.cops.some((c) => c.car.unmarked) && Math.random() < 0.5;
+      const d = this.makeCop(false, s.pos, s.yaw, unmarked);
       d.placeOnLane(s.seg, s.lane, s.dist);
       d.car.physicsActive = s.pos.distanceTo(g.player.focus) < 150;
     }
@@ -259,6 +313,10 @@ export class PoliceManager {
     for (const c of this.cops) this.game.removeCar(c.car);
     this.cops.length = 0;
     this.heat = 0;
+    if (this.stop) this.endStop();
+    for (const o of this.officers) this.game.peds?.removePed(o.ped);
+    this.officers.length = 0;
+    this.heli?.despawn();
     for (const s of this.spikes) s.mesh.parent?.remove(s.mesh);
     this.spikes.length = 0;
   }
@@ -269,11 +327,13 @@ export class PoliceManager {
     const t = this.targetCar();
     if (!t) return null;
     const p = t.body.position;
+    const hidden = this.hidden(p);
+    if (this.heli && this.heli.sees(p, hidden)) return { car: { body: { position: this.heli.pos } }, heli: true };
     let best = null, bd = range;
     for (const c of this.cops) {
       if (c.car.removed) continue;
       const d = c.car.body.position.distanceTo(p);
-      if (d > bd) continue;
+      if (d > bd || (hidden && d > 18)) continue;
       if (this.game.world.blocked(c.car.body.position.x, c.car.body.position.z, p.x, p.z, 3)) continue;
       best = c;
       bd = d;
@@ -300,10 +360,16 @@ export class PoliceManager {
       this.heat = 1;
       this.startPursuit(cop.car ? cop : null, true);
       this.game.toast(`🚨 ${o.text} — police: <b>pull over!</b>`, 'warn', 4);
+      this.callout(`Unit in pursuit: ${o.text.toLowerCase()} on ${this.game.hud.lastStreet || 'downtown'}. Attempting a traffic stop.`);
     } else {
       this.heat = Math.min(5, this.heat + o.heat);
-      if (Math.floor(this.heat) > Math.floor(before)) this.game.toast(`🚨 ${o.text} — wanted level ${Math.floor(this.heat)}`, 'warn');
+      if (Math.floor(this.heat) > Math.floor(before)) {
+        this.game.toast(`🚨 ${o.text} — wanted level ${Math.floor(this.heat)}`, 'warn');
+        this.calloutCd = 0;
+        this.callout();
+      }
     }
+    if (cop.car?.unmarked) cop.car.sirenOn = true;
     this.evade = 0;
   }
 
@@ -347,6 +413,9 @@ export class PoliceManager {
   update(dt) {
     const g = this.game;
     for (const k in this.offenseCd) this.offenseCd[k] -= dt;
+    this.calloutCd -= dt;
+    this.updateHeli(dt);
+    this.updateOfficers(dt);
     if (this.ramCd) this.ramCd = Math.max(0, this.ramCd - dt);
     if (!this.enabled) {
       if (this.cops.length) this.clearAll();
@@ -401,6 +470,17 @@ export class PoliceManager {
       if (car.speed > limit + 25 / 3.6) this.offense('speeding');
       // red light: crossing the stop line on red
       if (this.lastSeg === nl.seg && this.lastDist < nl.seg.stopDist && nl.dist >= nl.seg.stopDist + 0.3 && g.city.signalFor(nl.seg) === 'red' && car.speed > 3) this.offense('redlight');
+      // stop sign: you must actually stop (under ~4 km/h) in the last 12 m
+      if (nl.seg.to.stop) {
+        if (this.lastSeg !== nl.seg) this.stopMin = Infinity;
+        if (nl.dist > nl.seg.stopDist - 12 && nl.dist < nl.seg.stopDist + 0.3) this.stopMin = Math.min(this.stopMin ?? Infinity, car.speed);
+        if (this.lastSeg === nl.seg && this.lastDist < nl.seg.stopDist && nl.dist >= nl.seg.stopDist + 0.3 && (this.stopMin ?? 0) > 1.2) this.offense('stopsign');
+      }
+      // the wrong way down a one-way street
+      if (nl.seg.closed && car.speed > 4) {
+        this.wrongWay = (this.wrongWay || 0) + dt;
+        if (this.wrongWay > 2.5) this.offense('wrongway');
+      }
       this.lastSeg = nl.seg;
       this.lastDist = nl.dist;
     } else {
@@ -434,10 +514,11 @@ export class PoliceManager {
     if (lvl === 1 && pursuers.some((c) => c.mode === 'pullover')) {
       const cop = pursuers.find((c) => c.mode === 'pullover');
       const d = cop.car.body.position.distanceTo(p);
+      if (this.stop) return this.updateStop(dt, t);
       if (t.speed < 1.2 && d < 25) {
         this.pulloverT += dt;
-        this.bustProgress = this.pulloverT / 3;
-        if (this.pulloverT > 3) return this.ticket(cop);
+        this.bustProgress = this.pulloverT / 2;
+        if (this.pulloverT > 2 && cop.car.speed < 1) return this.beginStop(cop);
       } else {
         this.pulloverT = Math.max(0, this.pulloverT - dt);
         this.pursuitT += dt;
@@ -502,6 +583,10 @@ export class PoliceManager {
       if (close && stuck) {
         this.busted += dt;
         this.bustProgress = this.busted / 4;
+        if (this.busted > 1.2 && !this.officers.some((o) => o.bust)) {
+          const c = pursuers.find((q) => q.car.body.position.distanceTo(p) < 9);
+          if (c) this.officerOut(c.car, t, true);
+        }
         if (this.busted > 4) this.bust();
       } else {
         this.busted = Math.max(0, this.busted - dt * 1.5);
@@ -510,15 +595,189 @@ export class PoliceManager {
     }
   }
 
-  ticket(cop) {
+  // ------------------------------------------------------------ helicopter & officers on foot
+  updateHeli(dt) {
+    const g = this.game;
+    const lvl = Math.floor(this.heat);
+    const t = this.targetCar();
+    if (lvl >= 4 && this.enabled && t) {
+      this.heli ||= new PoliceHeli(g);
+      this.heli.arrive(t.body.position);
+      this.heliLowT = 0;
+    } else if (this.heli && this.heli.active) {
+      this.heliLowT += dt;
+      if (lvl === 0 || this.heliLowT > 20) this.heli.leave();
+    }
+    if (this.heli) this.heli.update(dt, t && !this.heli.leaving ? t.body.position : null);
+  }
+
+  /** An officer gets out of a cruiser and walks to the player's window. */
+  officerOut(copCar, target, bust = false) {
+    const g = this.game;
+    if (!g.peds) return null;
+    const from = copCar.body.toWorldPoint(new THREE.Vector3(copCar.boundsMax.x + 0.8, 0, 0.4), new THREE.Vector3());
+    const pc = target.body && target.boundsMax ? target : null;
+    const goal = pc ? pc.body.toWorldPoint(new THREE.Vector3(pc.boundsMax.x + 0.75, 0, 0.35), new THREE.Vector3()) : target.body.position.clone();
+    const ped = g.peds.spawnScripted(from, { goal, face: pc || null, uniform: 'cop', speed: bust ? 2.6 : 1.5 });
+    g.audio?.door?.(false);
+    const o = { ped, t: bust ? 10 : 60, bust, copCar };
+    this.officers.push(o);
+    return o;
+  }
+
+  updateOfficers(dt) {
+    for (let i = this.officers.length - 1; i >= 0; i--) {
+      const o = this.officers[i];
+      o.t -= dt;
+      if (o.gesture && o.ped.state === 'idle' && o.ped.shoutCd <= 0 && Math.random() < dt * 0.4) this.game.peds.shout(o.ped, ['STOP THE VEHICLE!', 'Hands where I can see them!', 'Pull over!'][Math.floor(Math.random() * 3)]);
+      if (o.t <= 0 || !this.game.peds.list.includes(o.ped)) {
+        this.game.peds.removePed(o.ped);
+        this.officers.splice(i, 1);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ interactive traffic stop
+  beginStop(cop) {
+    const g = this.game;
+    const t = this.targetCar();
+    this.bustProgress = 0;
+    const off = this.officerOut(cop.car, t, false);
+    this.stop = { cop, officer: off, phase: 'walk', t: 0, polite: false, docs: false, line: '' };
+    g.toast('🚓 Stay in the car. The officer is coming to your window.', 'info', 3);
+  }
+
+  stopKey(key) {
+    return this.game.input.keyPressed(key);
+  }
+
+  updateStop(dt, t) {
+    const g = this.game;
+    const st = this.stop;
+    st.t += dt;
+    const ped = st.officer?.ped;
+    // driving off = evading
+    if (t.speed > 3 && st.phase !== 'done') {
+      this.endStop();
+      this.heat = 2;
+      st.cop.mode = 'pursuit';
+      g.toast('🚨 You drove off during a traffic stop — evading police!', 'warn', 3.5);
+      this.callout('Suspect fled a traffic stop. All units respond.');
+      return;
+    }
+    if (st.phase === 'walk') {
+      if (!ped || ped.state === 'idle' || st.t > 9) {
+        st.phase = 'talk';
+        st.t = 0;
+        g.peds?.shout?.(ped, 'Licence and registration, please.');
+        this.showStopDialog('“Good evening. Do you know why I stopped you? Licence and registration, please.”', [
+          ['1', '📄 Hand over licence & registration (glovebox)', 'docs'],
+          ['2', '🙏 Apologize', 'sorry'],
+          ['3', '😤 Argue', 'argue'],
+        ]);
+      }
+      return;
+    }
+    if (st.phase === 'talk') {
+      let pick = null;
+      if (this.stopKey('Digit1') || st.click === 'docs') pick = 'docs';
+      else if (this.stopKey('Digit2') || st.click === 'sorry') pick = 'sorry';
+      else if (this.stopKey('Digit3') || st.click === 'argue') pick = 'argue';
+      st.click = null;
+      if (g.interior?.gloveOpen && !st.docs) pick = 'docs'; // grabbing the papers from the glovebox works too
+      if (!pick && st.t > 25) pick = 'docs';
+      if (pick === 'sorry' && !st.polite) {
+        st.polite = true;
+        g.peds?.shout?.(ped, 'Mm-hm.');
+        this.showStopDialog('“I appreciate that. I still need your licence and registration.”', [['1', '📄 Hand over licence & registration', 'docs'], ['3', '😤 Argue', 'argue']]);
+      } else if (pick === 'argue') {
+        st.argued = true;
+        if (Math.random() < 0.25) {
+          this.endStop();
+          this.heat = 2;
+          st.cop.mode = 'pursuit';
+          g.peds?.shout?.(ped, 'That\'s it, step out of the vehicle!');
+          g.toast('🚨 The officer is arresting you!', 'warn', 3);
+          return;
+        }
+        this.showStopDialog('“Sir, I need your documents. Now.”', [['1', '📄 Hand over licence & registration', 'docs']]);
+      } else if (pick === 'docs') {
+        st.docs = true;
+        st.phase = 'check';
+        st.t = 0;
+        if (g.interior) g.interior.gloveOpen = true;
+        g.audio?.click?.();
+        this.showStopDialog('You hand over your licence and the registration from the glovebox. The officer walks back to the cruiser to run your plate…', []);
+        if (ped) {
+          ped.goal = st.cop.car.body.toWorldPoint(new THREE.Vector3(st.cop.car.boundsMax.x + 0.8, 0, 0.4), new THREE.Vector3());
+          ped.state = 'goto';
+        }
+      }
+      return;
+    }
+    if (st.phase === 'check') {
+      if (st.t < 5) return;
+      if (g.interior) g.interior.gloveOpen = false;
+      const car = g.player.car;
+      // stolen car or suspended licence: you're not leaving
+      if (car?.stolen || (g.career && g.career.suspended)) {
+        this.endStop();
+        this.heat = car?.stolen ? 3 : 2;
+        st.cop.mode = 'pursuit';
+        g.toast(car?.stolen ? '🚨 This car is reported stolen!' : '🚨 Your licence is suspended — you\'re under arrest!', 'warn', 3.5);
+        this.callout(car?.stolen ? 'Plate comes back stolen! Suspect is fleeing.' : 'Driver has a suspended licence. Take them in.');
+        return;
+      }
+      const key = this.offenses[this.offenses.length - 1] || 'speeding';
+      const minor = ['speeding', 'seatbelt', 'nolights', 'stopsign', 'wrongway', 'phone'].includes(key);
+      const warn = minor && !st.argued && Math.random() < (st.polite ? 0.5 : 0.3);
+      this.endStop();
+      this.ticket(st.cop, warn ? 0 : st.argued ? 1.5 : 1);
+    }
+  }
+
+  showStopDialog(text, choices) {
+    let el = document.getElementById('stop-dialog');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'stop-dialog';
+      document.getElementById('hud').appendChild(el);
+      el.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="who">👮 Officer</div><div class="txt">${text}</div>${choices.map(([k, label, id]) => `<button data-id="${id}"><kbd>${k}</kbd> ${label}</button>`).join('')}`;
+    el.querySelectorAll('button').forEach((b) => (b.onclick = () => this.stop && (this.stop.click = b.dataset.id)));
+    if (choices.length) this.game.input.unlock();
+  }
+
+  endStop() {
+    const el = document.getElementById('stop-dialog');
+    if (el) el.classList.add('hidden');
+    const st = this.stop;
+    this.stop = null;
+    if (st?.officer) st.officer.t = Math.min(st.officer.t, 6);
+    if (st?.officer?.ped && st.cop) {
+      st.officer.ped.goal = st.cop.car.body.toWorldPoint(new THREE.Vector3(st.cop.car.boundsMax.x + 0.8, 0, 0.4), new THREE.Vector3());
+      st.officer.ped.state = 'goto';
+    }
+    this.pulloverT = 0;
+    this.bustProgress = 0;
+  }
+
+  ticket(cop, mult = 1) {
     const g = this.game;
     const key = this.offenses[this.offenses.length - 1] || 'speeding';
     const o = OFFENSES[key];
-    const fine = o.fine;
-    g.stats.fines += fine;
-    g.career?.fine?.(fine, key);
-    g.hud.big('TICKET', `${o.text} — $${fine} fine. Drive safe.`, 3.5);
-    cop.say('Have a nice day. Slow down.', 'cop');
+    const fine = Math.round(o.fine * mult);
+    if (fine > 0) {
+      g.stats.fines += fine;
+      g.career?.fine?.(fine, key);
+      g.hud.big('TICKET', `${o.text} — $${fine} fine. Drive safe.`, 3.5);
+      cop.say('Have a nice day. Slow down.', 'cop');
+    } else {
+      g.hud.big('WARNING', `${o.text} — just a warning this time.`, 3.5);
+      cop.say('Consider this a warning.', 'cop');
+    }
     this.heat = 0;
     this.offenses.length = 0;
     this.pulloverT = 0;
@@ -605,6 +864,13 @@ export class PoliceManager {
     g.scene.add(mesh);
     this.spikes.push({ a, b, mesh, t: 45 });
     g.toast('🚧 Roadblock ahead!', 'warn');
+    this.callout('All units: roadblock is set. Spike strips deployed.');
+    // two officers take cover by the cruisers
+    for (const lane of [0, 1]) {
+      const p = g.city.lanePoint(seg, lane, d + 4).addScaledVector(seg.right, lane ? 2.2 : -1.2);
+      const o = g.peds?.spawnScripted(p, { goal: p, face: t, uniform: 'cop' });
+      if (o) this.officers.push({ ped: o, t: 26, gesture: true });
+    }
     void mid;
   }
 
@@ -651,7 +917,11 @@ export class PoliceManager {
       bar.style.display = 'block';
       const fill = bar.querySelector('.fill');
       const label = bar.querySelector('span');
-      if ((this.bustProgress || 0) > 0.05) {
+      if (this.stop) {
+        fill.style.width = '100%';
+        fill.style.background = 'linear-gradient(90deg,#2f7bff,#7fb0ff)';
+        label.textContent = 'TRAFFIC STOP — STAY IN THE CAR';
+      } else if ((this.bustProgress || 0) > 0.05) {
         fill.style.width = `${clamp(this.bustProgress, 0, 1) * 100}%`;
         fill.style.background = lvl === 1 ? 'linear-gradient(90deg,#52d273,#8ff0a8)' : 'linear-gradient(90deg,#ff4a4a,#ff9090)';
         label.textContent = lvl === 1 ? 'PULLING OVER…' : 'BUSTED…';

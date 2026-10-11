@@ -18,6 +18,8 @@ const { N, PITCH, RW, LANE, SW, CURB } = CITY;
 export const roadCoord = (k) => (k - (N - 1) / 2) * PITCH;
 export const CITY_HALF = roadCoord(N - 1) + RW / 2;
 
+const STOP_NODES = [[1, 1], [5, 1], [1, 5], [5, 5]];
+const ONE_WAY_I = 1; // Maple Ave
 const AVENUES = ['Harbor Ave', 'Maple Ave', 'Mission Ave', 'Central Ave', 'Oak Ave', 'Sunset Blvd', 'Canyon Rd'];
 const STREETS = ['1st St', '2nd St', '3rd St', 'Main St', '5th St', '6th St', '7th St'];
 
@@ -107,9 +109,11 @@ export class City {
 
   build() {
     this.buildGraph();
+    this.markOneWay();
     this.planBlocks();
     this.buildGround();
     this.buildRoads();
+    this.buildRoadFeatures();
     this.buildBlocks();
     this.buildProvingGrounds();
     this.buildBoundary();
@@ -150,6 +154,11 @@ export class City {
       a.out.push(s);
       return s;
     };
+    // all-way stops at four quiet residential crossroads instead of signals
+    for (const [i, j] of STOP_NODES) {
+      node(i, j).signal = false;
+      node(i, j).stop = true;
+    }
     for (let j = 0; j < N; j++)
       for (let i = 0; i < N; i++) {
         const a = node(i, j);
@@ -168,6 +177,11 @@ export class City {
       }
   }
 
+  /** Maple Ave is one-way northbound: the southbound carriageway is closed to traffic. */
+  markOneWay() {
+    for (const s of this.segments) if (s.axis === 'z' && s.from.i === ONE_WAY_I && s.dir.z < 0) s.closed = true;
+  }
+
   /** Position on a lane: lane 0 = inner (next to the centre line), 1 = outer. */
   lanePoint(seg, lane, dist, out = new THREE.Vector3()) {
     const off = LANE * (lane + 0.5);
@@ -177,6 +191,7 @@ export class City {
   /** Signal for a segment arriving at its `to` node. */
   signalFor(seg) {
     const n = seg.to;
+    if (n.stop) return 'stop';
     if (!n.signal) return 'green';
     const total = this.signalPhaseLen.reduce((a, b) => a + b, 0);
     let t = (this.time + n.offset) % total;
@@ -351,6 +366,125 @@ export class City {
     this.group.add(m);
     this.markingsMats = [white, yellow];
     this.wetMats.push({ mat: white, dry: 0.7, wet: 0.2, dryColor: new THREE.Color(0xe8e6de), wetColor: new THREE.Color(0xbcbab2) });
+  }
+
+  // ------------------------------------------------------------ road features
+  /** Stop signs, one-way signs, speed bumps, potholes, manhole covers and rain puddles. */
+  buildRoadFeatures() {
+    const world = this.world;
+    const rnd = mulberry32(4242);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: 0.6, roughness: 0.4 });
+    const poleGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.4, 6);
+    // stop signs on every approach to an all-way stop
+    const stopMat = new THREE.MeshStandardMaterial({ map: stopSignTexture(), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.5 });
+    const stopGeo = new THREE.PlaneGeometry(0.75, 0.75);
+    for (const sg of this.segments) {
+      if (!sg.to.stop || sg.closed) continue;
+      const p = sg.start.clone().addScaledVector(sg.dir, sg.stopDist + 0.6).addScaledVector(sg.right, RW / 2 + 1.1);
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(p.x, CURB + 1.2, p.z);
+      const sign = new THREE.Mesh(stopGeo, stopMat);
+      sign.position.set(p.x, CURB + 2.2, p.z);
+      sign.rotation.y = Math.atan2(-sg.dir.x, -sg.dir.z);
+      this.group.add(pole, sign);
+      world.addCylinder(p.x, p.z, 0.06, 0, 2.6, { kind: 'pole' });
+      // "STOP" painted on the road
+      const t = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.1), new THREE.MeshStandardMaterial({ map: roadTextTexture('STOP'), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, roughness: 0.7 }));
+      const tp = sg.start.clone().addScaledVector(sg.dir, sg.stopDist - 3).addScaledVector(sg.right, RW / 4);
+      t.position.set(tp.x, 0.015, tp.z);
+      t.rotation.set(-Math.PI / 2, 0, Math.atan2(sg.dir.x, sg.dir.z) + Math.PI);
+      this.group.add(t);
+    }
+    // ONE WAY signs along Maple Ave
+    const owMat = new THREE.MeshStandardMaterial({ map: oneWayTexture(), side: THREE.DoubleSide, roughness: 0.5 });
+    const owGeo = new THREE.PlaneGeometry(1.2, 0.4);
+    for (const n of this.nodes) {
+      if (n.i !== ONE_WAY_I) continue;
+      for (const sx of [-1, 1]) {
+        const x = n.x + sx * (RW / 2 + 1.2), z = n.z + RW / 2 + 1.2;
+        const pole = new THREE.Mesh(poleGeo, poleMat);
+        pole.position.set(x, CURB + 1.2, z);
+        const sign = new THREE.Mesh(owGeo, owMat);
+        sign.position.set(x, CURB + 2.2, z);
+        sign.rotation.y = sx > 0 ? -Math.PI / 2 : Math.PI / 2;
+        if (sx < 0) sign.scale.x = -1;
+        this.group.add(pole, sign);
+        world.addCylinder(x, z, 0.06, 0, 2.6, { kind: 'pole' });
+      }
+    }
+    // speed bumps on four residential streets (across both directions)
+    this.bumps = [];
+    const bumpMat = new THREE.MeshStandardMaterial({ map: stripeTexture(), roughness: 0.7 });
+    for (const [i, j, axis] of [[2, 5, 'x'], [5, 2, 'z'], [3, 1, 'x'], [1, 3, 'z'], [4, 6, 'x']]) {
+      const a = this.node(i, j), b = axis === 'x' ? this.node(i + 1, j) : this.node(i, j + 1);
+      if (!b) continue;
+      const x = (a.x + b.x) / 2, z = (a.z + b.z) / 2;
+      const yaw = axis === 'x' ? Math.PI / 2 : 0;
+      const dx = Math.sin(yaw), dz = Math.cos(yaw);
+      world.addRamp(x - dx * 0.45, z - dz * 0.45, yaw, RW, 0.9, 0, 0.085, MATERIALS.asphalt);
+      world.addRamp(x + dx * 0.45, z + dz * 0.45, yaw + Math.PI, RW, 0.9, 0, 0.085, MATERIALS.asphalt);
+      // a shallow arc: 1.8 m chord, 8.5 cm high, running across the road
+      const R = 4.81;
+      const geo = new THREE.CylinderGeometry(R, R, RW, 24, 1, false, -0.188, 0.376);
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(0, -(R - 0.085), 0);
+      const m = new THREE.Mesh(geo, bumpMat);
+      m.position.set(x, 0, z);
+      m.rotation.y = yaw - Math.PI / 2;
+      m.receiveShadow = true;
+      this.group.add(m);
+      this.bumps.push({ x, z, axis });
+    }
+    // potholes, manhole covers and rain puddles, as flat decals
+    const onLane = () => {
+      const sg = this.segments[Math.floor(rnd() * this.segments.length)];
+      const d = 12 + rnd() * (sg.length - 30);
+      const off = 1 + rnd() * (RW / 2 - 2);
+      return { sg, p: sg.start.clone().addScaledVector(sg.dir, d).addScaledVector(sg.right, off) };
+    };
+    const decals = (tex, n, place) => {
+      const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.6 });
+      const geo = new THREE.PlaneGeometry(1, 1);
+      geo.rotateX(-Math.PI / 2);
+      const im = new THREE.InstancedMesh(geo, mat, n);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+      for (let k = 0; k < n; k++) {
+        const { p, r } = place(k);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6.28);
+        im.setMatrixAt(k, m4.compose(pos.set(p.x, 0.012, p.z), q, sc.set(r * 2, 1, r * 2)));
+      }
+      im.receiveShadow = true;
+      this.group.add(im);
+      return im;
+    };
+    decals(potholeTexture(), 18, () => {
+      const { p } = onLane();
+      const r = 0.35 + rnd() * 0.25;
+      world.addDip(p.x, p.z, r, 0.07 + rnd() * 0.05);
+      return { p, r: r * 1.2 };
+    });
+    decals(manholeTexture(), 26, () => {
+      const { p } = onLane();
+      world.addDip(p.x, p.z, 0.42, 0.012);
+      return { p, r: 0.42 };
+    });
+    // puddles near the kerbs: visible and slippery (aquaplaning) once the roads are soaked
+    const puddleMat = new THREE.MeshStandardMaterial({ color: 0x2a3036, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, map: puddleTexture() });
+    const pgeo = new THREE.PlaneGeometry(1, 1);
+    pgeo.rotateX(-Math.PI / 2);
+    const pim = new THREE.InstancedMesh(pgeo, puddleMat, 34);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    for (let k = 0; k < 34; k++) {
+      const sg = this.segments[Math.floor(rnd() * this.segments.length)];
+      const d = 10 + rnd() * (sg.length - 25);
+      const p = sg.start.clone().addScaledVector(sg.dir, d).addScaledVector(sg.right, RW / 2 - 1.2 - rnd() * 1.2);
+      const w = 2.2 + rnd() * 2.5, l = 3 + rnd() * 4;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(sg.dir.x, sg.dir.z));
+      pim.setMatrixAt(k, m4.compose(pos.set(p.x, 0.014, p.z), q, sc.set(w, 1, l)));
+      world.addSlick(p.x, p.z, Math.min(w, l) * 0.45, 'puddle');
+    }
+    this.group.add(pim);
+    this.puddleMat = puddleMat;
   }
 
   // ------------------------------------------------------------ blocks
@@ -883,7 +1017,9 @@ export class City {
 
   /** Street-level spawn positions for traffic or the player. */
   randomLaneSpot(rnd = Math.random) {
-    const s = this.segments[Math.floor(rnd() * this.segments.length)];
+    let s = this.segments[Math.floor(rnd() * this.segments.length)];
+    for (let k = 0; k < 8 && s.closed; k++) s = this.segments[Math.floor(rnd() * this.segments.length)];
+    if (s.closed) s = s.reverse;
     const lane = rnd() < 0.5 ? 0 : 1;
     const d = 8 + rnd() * (s.length - 30);
     return { seg: s, lane, dist: d, pos: this.lanePoint(s, lane, d), yaw: Math.atan2(s.dir.x, s.dir.z) };
@@ -899,6 +1035,7 @@ export class City {
   }
 
   setWetness(w) {
+    if (this.puddleMat) this.puddleMat.opacity = clamp((w - 0.35) * 1.6, 0, 0.85);
     for (const e of this.wetMats) {
       e.mat.roughness = lerp(e.dry, e.wet, w);
       e.mat.color.copy(e.dryColor).lerp(e.wetColor, w);
@@ -909,4 +1046,123 @@ export class City {
 
 function world_addWall(world, x0, z0, x1, z1, h) {
   world.addBox(x0, 0, z0, x1, h, z1, { kind: 'wall', mat: MATERIALS.concrete });
+}
+
+// ------------------------------------------------------------ small canvas textures for road features
+function canvasTex(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+function stopSignTexture() {
+  return canvasTex(128, 128, (x, w) => {
+    const oct = (r, col) => {
+      x.fillStyle = col;
+      x.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const a = Math.PI / 8 + (k * Math.PI) / 4;
+        x.lineTo(w / 2 + Math.cos(a) * r, w / 2 + Math.sin(a) * r);
+      }
+      x.closePath();
+      x.fill();
+    };
+    oct(63, '#ffffff');
+    oct(57, '#c8102e');
+    x.fillStyle = '#fff';
+    x.font = 'bold 36px Arial';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText('STOP', w / 2, w / 2 + 2);
+  });
+}
+function oneWayTexture() {
+  return canvasTex(192, 64, (x, w, h) => {
+    x.fillStyle = '#111';
+    x.fillRect(0, 0, w, h);
+    x.fillStyle = '#fff';
+    x.fillRect(6, 10, w - 12, h - 20);
+    x.fillStyle = '#111';
+    x.beginPath();
+    x.moveTo(16, 28);
+    x.lineTo(130, 28);
+    x.lineTo(130, 18);
+    x.lineTo(176, 32);
+    x.lineTo(130, 46);
+    x.lineTo(130, 36);
+    x.lineTo(16, 36);
+    x.fill();
+    x.fillStyle = '#fff';
+    x.font = 'bold 15px Arial';
+    x.fillText('ONE WAY', 34, 37);
+  });
+}
+function roadTextTexture(text) {
+  return canvasTex(256, 108, (x, w, h) => {
+    x.fillStyle = 'rgba(235,233,224,0.92)';
+    x.font = 'bold 92px Arial';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.save();
+    x.scale(1, 1.1);
+    x.fillText(text, w / 2, h / 2 / 1.1 + 4);
+    x.restore();
+  });
+}
+function stripeTexture() {
+  const t = canvasTex(256, 32, (x, w, h) => {
+    for (let k = 0; k < 16; k++) {
+      x.fillStyle = k % 2 ? '#f2c200' : '#1b1b1b';
+      x.fillRect(k * 16, 0, 16, h);
+    }
+  });
+  return t;
+}
+function potholeTexture() {
+  return canvasTex(64, 64, (x, w) => {
+    const g = x.createRadialGradient(w / 2, w / 2, 4, w / 2, w / 2, w / 2);
+    g.addColorStop(0, 'rgba(12,12,12,0.95)');
+    g.addColorStop(0.6, 'rgba(25,24,22,0.85)');
+    g.addColorStop(1, 'rgba(40,38,36,0)');
+    x.fillStyle = g;
+    x.beginPath();
+    for (let k = 0; k < 14; k++) {
+      const a = (k / 14) * Math.PI * 2, r = w * (0.38 + Math.random() * 0.12);
+      x.lineTo(w / 2 + Math.cos(a) * r, w / 2 + Math.sin(a) * r);
+    }
+    x.fill();
+  });
+}
+function manholeTexture() {
+  return canvasTex(64, 64, (x, w) => {
+    x.fillStyle = '#3c3f43';
+    x.beginPath();
+    x.arc(w / 2, w / 2, w / 2 - 1, 0, Math.PI * 2);
+    x.fill();
+    x.strokeStyle = '#26282b';
+    x.lineWidth = 2;
+    for (let k = 10; k < w; k += 8) {
+      x.beginPath();
+      x.moveTo(k, 8);
+      x.lineTo(k, w - 8);
+      x.stroke();
+    }
+    x.beginPath();
+    x.arc(w / 2, w / 2, w / 2 - 3, 0, Math.PI * 2);
+    x.stroke();
+  });
+}
+function puddleTexture() {
+  return canvasTex(64, 64, (x, w) => {
+    const g = x.createRadialGradient(w / 2, w / 2, 2, w / 2, w / 2, w / 2);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.7, 'rgba(255,255,255,0.9)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g;
+    x.fillRect(0, 0, w, w);
+  });
 }

@@ -666,8 +666,10 @@ export class Garage {
       }
       for (const i of q.items) if (i.key !== 'paint' && !this.entry.parts.includes(i.key)) this.entry.parts.push(i.key);
       const changed = JSON.stringify(this.cfg) !== JSON.stringify(this.original);
+      const repainted = this.cfg.paint !== this.original.paint || this.cfg.livery !== this.original.livery;
       this.entry.cfg = { ...this.cfg };
       this.close();
+      if (repainted) g.police?.onRespray?.();
       if (changed && g.player.car) {
         ca.storeCar(g.player.car);
         this.entry.cfg = { ...this.cfg };
@@ -679,9 +681,11 @@ export class Garage {
       g.hud.show(true);
       return;
     }
+    const repainted = g.carConfig && (this.cfg.paint !== g.carConfig.paint || this.cfg.livery !== g.carConfig.livery);
     g.carConfig = { ...this.cfg };
     save('sandemo.car', g.carConfig);
     this.close();
+    if (repainted && this.from !== 'menu') g.police?.onRespray?.();
     const where = this.from === 'menu' ? null : this.from === 'shop' ? g.city.locations.garage : undefined;
     if (this.from === 'menu') {
       if (g.player.car) g.removeCar(g.player.car);

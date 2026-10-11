@@ -28,6 +28,7 @@ export function nodePath(city, a, b) {
     if (done.has(n.id)) continue;
     done.add(n.id);
     for (const s of n.out) {
+      if (s.closed) continue; // one-way
       const m = s.to;
       const nd = dist.get(n.id) + s.length + (s.to.signal ? 8 : 0);
       if (nd < (dist.get(m.id) ?? Infinity)) {

@@ -45,6 +45,7 @@ export class Radio {
       { name: 'LO-FI BEATS', freq: '88.2 FM', kind: 'lofi', bpm: 78, songs: ['rainy windshield', 'late bus home', 'coffee & traffic', 'parking lot dreams', 'slow lane'] },
       { name: 'SAN DEMO TALK', freq: '97.9 FM', kind: 'talk', bpm: 90, songs: ['News & traffic on the nines'] },
       { name: 'CLASSICS', freq: '105.1 FM', kind: 'classic', bpm: 70, songs: ['Waltz for a Crumple Zone', 'Nocturne in Gridlock', 'Sonata for Four Wheels'] },
+      { name: 'SDPD SCANNER', freq: '155.4 MHz', kind: 'scanner', bpm: 60, songs: ['Live police dispatch'] },
     ];
     this.pickSong();
   }
@@ -125,6 +126,7 @@ export class Radio {
     }
     const st = this.station;
     if (st.kind === 'talk') this.updateTalk(dt);
+    if (st.kind === 'scanner') this.updateScanner(dt);
     const stepDur = 60 / st.bpm / 4;
     if (this.nextTime < t) this.nextTime = t + 0.05;
     while (this.nextTime < t + 0.2) {
@@ -251,6 +253,17 @@ export class Radio {
     }
   }
 
+  // ------------------------------------------------------------ police scanner
+  updateScanner(dt) {
+    this.talkTimer -= dt;
+    if (this.talkTimer > 0) return;
+    const g = this.audio.game;
+    const heat = g.police ? g.police.heat : 0;
+    this.talkTimer = heat > 0 ? 3 + Math.random() * 4 : 6 + Math.random() * 9;
+    this.audio.radioChatter(this.bus, 0.9);
+    g.hud.radio(`📻 SCANNER: “${scannerLine(g)}”`);
+  }
+
   // ------------------------------------------------------------ talk radio
   updateTalk(dt) {
     this.talkTimer -= dt;
@@ -297,10 +310,36 @@ export class Radio {
       `Sports: the San Demo Pistons lost again last night. Coach says the team is, quote, rebuilding.`,
       `Traffic on Main Street is moving well. Watch for the lights at Central Avenue.`,
       `A listener asks: is it legal to honk at a pigeon? Legally, yes. Morally, we'll let you decide.`,
-      `Fuel prices are steady at the Fuel Stop. Pull up to a pump and hold E to fill up.`,
+      `Fuel prices are steady at the Fuel Stop. Pull up to a pump and hold Enter to fill up.`,
     );
     return pick(lines);
   }
+}
+
+/** What dispatch is saying: your pursuit if there is one, otherwise the city's other problems. */
+export function scannerLine(g) {
+  const car = g.player.car;
+  const street = g.hud.lastStreet || 'downtown';
+  const heat = g.police ? g.police.heat : 0;
+  const color = colorName(car ? car.cfg.paint : '#888');
+  const model = car ? car.model.prof.b.name : 'vehicle';
+  const unit = () => `Unit ${Math.floor(10 + Math.random() * 40)}`;
+  if (heat >= 1) {
+    return pick([
+      `All units, suspect vehicle is a ${color} ${model}, last seen on ${street}.`,
+      `${unit()} in pursuit, ${street}, speeds in excess of ${Math.round((car?.speed || 20) * 3.6 / 10) * 10}.`,
+      heat >= 3 ? `Requesting air support and a roadblock ahead of the suspect on ${street}.` : `${unit()}, I have visual on the ${color} ${model}.`,
+      heat >= 4 ? 'Spike strips authorized. Repeat, spike strips authorized.' : `Plate partial ${car ? car.cfg.plate.slice(0, 3) : 'unknown'}, running it now.`,
+    ]);
+  }
+  return pick([
+    `${unit()}, 10-50, minor collision at ${pick(['Main and 3rd', 'Central and 5th', 'Oak and 7th', 'Harbor and 2nd'])}.`,
+    `${unit()}, noise complaint at the ${pick(['harbor warehouses', 'Liberty Park', 'parking lot on Maple', 'construction site'])}.`,
+    `${unit()}, stalled vehicle blocking the right lane on ${pick(['Sunset Blvd', 'Mission Ave', 'Canyon Rd'])}.`,
+    `${unit()}, available for calls. Coffee first.`,
+    `Dispatch, ${unit()}, speed check on the coast highway, all quiet.`,
+    `${unit()}, report of a loose dog near the beach. Owner is "very sorry".`,
+  ]);
 }
 
 function colorName(hex) {
