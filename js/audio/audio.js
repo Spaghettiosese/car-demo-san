@@ -9,6 +9,9 @@ const ENGINE_PROFILES = {
   v6: { pattern: [1, 0.86, 0.95, 0.9, 1, 0.85], f: [130, 380, 760], a: [1, 0.6, 0.25], noise: 0.22, jitter: 0.012, decay: 75 },
   v8: { pattern: [1, 0.55, 0.95, 0.7, 1, 0.5, 0.9, 0.78], f: [88, 245, 520], a: [1, 0.7, 0.3], noise: 0.32, jitter: 0.03, decay: 55 },
   i6: { pattern: [1, 0.96, 1, 0.95, 1, 0.97], f: [150, 520, 1100], a: [1, 0.5, 0.25], noise: 0.18, jitter: 0.006, decay: 95 },
+  // a smooth, screaming V12 and a clattering turbo-diesel
+  v12: { pattern: [1, 0.97, 1, 0.96, 1, 0.98, 1, 0.97, 1, 0.96, 1, 0.98], f: [190, 640, 1450], a: [1, 0.55, 0.32], noise: 0.14, jitter: 0.004, decay: 115 },
+  diesel: { pattern: [1, 0.8, 0.95, 0.85, 1, 0.78], f: [62, 190, 1700], a: [1, 0.65, 0.35], noise: 0.45, jitter: 0.02, decay: 38 },
 };
 
 function engineBuffer(ctx, profile, cyl, rpm, onLoad) {
@@ -491,7 +494,7 @@ export class AudioEngine {
     this.tick = clickBuffer(ctx, 2600, 0.015);
     this.tock = clickBuffer(ctx, 1900, 0.018);
     this.npcEngineBuf = engineBuffer(ctx, 'v6', 6, 2800, true);
-    this.npcBufs = { v6: this.npcEngineBuf, i4: engineBuffer(ctx, 'i4', 4, 2800, true), v8: engineBuffer(ctx, 'v8', 8, 2800, true), i6: engineBuffer(ctx, 'i6', 6, 2800, true), ev: whineBuffer(ctx) };
+    this.npcBufs = { v6: this.npcEngineBuf, i4: engineBuffer(ctx, 'i4', 4, 2800, true), v8: engineBuffer(ctx, 'v8', 8, 2800, true), i6: engineBuffer(ctx, 'i6', 6, 2800, true), v12: engineBuffer(ctx, 'v12', 12, 2800, true), diesel: engineBuffer(ctx, 'diesel', 6, 1500, true), ev: whineBuffer(ctx) };
     // continuous layers
     this.road = this.loopNoise(this.brown, 'lowpass', 260, 0.7, this.sfxBus);
     this.wind = this.loopNoise(this.pink, 'bandpass', 700, 0.6, this.sfxBus);

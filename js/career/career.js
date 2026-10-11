@@ -290,10 +290,55 @@ export class Career {
   }
 
   // ------------------------------------------------------------ per frame
+  /** Contextual hints, shown once per profile when the situation first comes up. */
+  contextHints() {
+    const g = this.game;
+    const car = g.player.car;
+    if (!car || g.player.mode !== 'car' || g.activities?.current || g.tutorial?.active) return;
+    const pt = car.phys.pt;
+    const tank = pt.ev ? 1 : pt.spec.tank || 55;
+    if ((pt.ev ? pt.soc : pt.fuel / tank) < 0.15) this.hint('fuel', pt.ev ? '🔋 Battery low: the EV chargers are at the Fuel Stop (⛽ on the map).' : '⛽ Fuel is running low. The Fuel Stop is on your map; stop at a pump and hold <kbd>Enter</kbd>.');
+    if (car.damageSummary().body > 0.2) this.hint('damage', '🔧 Your car is damaged. Repair it at San Demo Customs, or call the mechanic from your phone (<kbd>Tab</kbd> → Contacts).');
+    const heat = g.police?.heat || 0;
+    if (heat >= 1 && heat < 2) this.hint('pullover', '🚨 The police want you to pull over. Stop and stay in the car for a ticket, or try to lose them.');
+    if (heat >= 3) this.hint('hide', '🚨 Lots of heat! Break line of sight, hide in the car wash or the customs workshop, or get a respray.');
+    if (g.env.night > 0.6 && car.sys.lightLevel < 2) this.hint('lights', '💡 It\'s dark: switch on your headlights with <kbd>L</kbd>.');
+    if (g.env.rain > 0.4) this.hint('rain', '🌧 Wet roads double your braking distance. Wipers: <kbd>V</kbd>.');
+    if ((g.env.snowCover || 0) > 0.3) this.hint('snow', '❄ Snow on the road: very little grip. Gentle on the throttle and brakes.');
+    if (car.submerged > 0.2) this.hint('water', '🌊 Water and engines don\'t mix. Get out before the cabin floods (<kbd>F</kbd>).');
+    if (!car.sys.seatbelt && car.speed > 10) this.hint('belt', '🔔 No seatbelt: press <kbd>;</kbd> (or click the buckle). It\'s also a fine.');
+    if (car.speed > 120 / 3.6 && Math.abs(car.body.position.x) < 380 && Math.abs(car.body.position.z) < 380) this.hint('cams', '📸 Speed cameras in town mail you fines. Pay them in the Bank app before the late fee.');
+    if (this.p.money > 6000 && this.level >= 2) this.hint('dealer', '🚗 Saving up? San Demo Motors (east of the city) sells new cars, with finance.');
+  }
+
+  /** Contacts text you about work now and then: that job pays extra for a while. */
+  jobOffers(dt) {
+    const g = this.game;
+    const p = this.p;
+    if (!g.activities || g.tutorial?.active) return;
+    this.offerT = (this.offerT ?? 150) - dt;
+    if (p.offer && p.playtime > p.offer.until) p.offer = null;
+    if (this.offerT > 0 || p.offer) return;
+    this.offerT = 200 + Math.random() * 220;
+    const list = g.activities.list().filter((a) => !a.locked && a.start);
+    if (!list.length) return;
+    const a = list[Math.floor(Math.random() * list.length)];
+    const who = [['Uncle Vic', 'Kid, I heard there\'s good money in'], ['Rosa (dispatcher)', 'Got a gig for you:'], ['Big Tony', 'You want to make some cash? Try'], ['Kenji', 'Bet you can\'t beat my time in'], ['Demo Mutual', 'Our clients are hiring drivers for']][Math.floor(Math.random() * 5)];
+    p.offer = { id: a.id, until: p.playtime + 600, mult: 1.5 };
+    this.message(who[0], `${who[1]} ${a.name}. Pays 50% extra for the next 10 minutes. I put it on your GPS.`);
+    g.setWaypoint?.(a.start.clone ? a.start.clone() : a.start);
+  }
+
   update(dt) {
     const g = this.game;
     const p = this.p;
     p.playtime += dt;
+    this.hintT = (this.hintT || 0) - dt;
+    if (this.hintT <= 0) {
+      this.hintT = 1;
+      this.contextHints();
+    }
+    this.jobOffers(dt);
     const car = g.player.car;
     if (car && g.player.mode === 'car') {
       p.stats.distance += car.speed * dt;

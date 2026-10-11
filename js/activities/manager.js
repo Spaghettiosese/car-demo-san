@@ -353,6 +353,13 @@ export class ActivityManager {
         const key = ['', 'bronze', 'silver', 'gold'][medal];
         money = (key ? def.reward[key] : def.reward.finish || 0) * ctx.diff.reward;
         if (def.payout) money = def.payout(ctx, money);
+        // a contact's job offer: extra pay while it lasts
+        const offer = ca && ca.p.offer;
+        if (offer && offer.id === def.id && ca.p.playtime < offer.until) {
+          money *= offer.mult;
+          ca.p.offer = null;
+          g.toast(`📱 Offer bonus ×${offer.mult}`, 'good', 2);
+        }
         if (daily) {
           money *= 2;
           ca.p.daily = { date: this.today(), done: true };

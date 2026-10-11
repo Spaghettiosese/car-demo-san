@@ -21,6 +21,7 @@ import { HUD } from './ui/hud.js';
 import { PhotoMode } from './ui/photo.js';
 import { Sandbox } from './sandbox.js';
 import { Ambient } from './world/ambient.js';
+import { Tutorial } from './career/tutorial.js';
 import { Replay } from './replay.js';
 import { clamp, lerp, KMH } from './core/util.js';
 
@@ -176,6 +177,7 @@ export class Game {
     this.photo = new PhotoMode(this);
     this.sandbox = new Sandbox(this);
     this.ambient = new Ambient(this);
+    this.tutorial = new Tutorial(this);
     this.spawnPlayer(this.carConfig);
     progress(0.95, 'Warming up tyres…');
     await tick();
@@ -724,6 +726,7 @@ export class Game {
       this.traffic?.update(sim);
       this.services?.update(sim);
       this.sandbox?.update(sim);
+      this.tutorial?.update(sim);
       this.peds?.update(sim);
       this.police?.update(sim);
       this.physics.step(sim, this.cars);
@@ -945,6 +948,11 @@ export class Game {
   carKeys(car, dt = 1 / 60) {
     const input = this.input;
     if (this.cam.mode === 'free') return;
+    if (input.pressed('seatbelt')) {
+      car.sys.seatbelt = !car.sys.seatbelt;
+      this.audio?.buckle?.(car.sys.seatbelt);
+      this.toast(car.sys.seatbelt ? 'Seatbelt fastened' : 'Seatbelt off', 'info', 1.2);
+    }
     const s = car.sys;
     const pt = car.phys.pt;
     const ext = car.ext;

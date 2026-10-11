@@ -122,7 +122,75 @@ export const BODIES = {
   },
 };
 
-export const PLAYER_BODIES = ['sedan', 'hatch', 'muscle', 'coupe', 'suv', 'pickup', 'van'];
+// v2 bodies: a 60s classic, a mid-engine supercar, a box truck and a city bus
+Object.assign(BODIES, {
+  classic: {
+    name: "Marquis '64", kind: 'Classic coupe', L: 4.9, R: 0.34, axles: [1.55, -1.35],
+    mass: 1520, comY: 0.5, frontWeight: 0.56, cdA: 0.82, springHz: [1.2, 1.25], travel: [0.17, 0.12],
+    top: [[-2.45, 0.82], [-2.4, 0.95], [-2.05, 1.0], [-1.2, 1.01], [-0.85, 1.27], [-0.3, 1.36], [0.25, 1.36], [0.85, 1.0], [1.7, 0.96], [2.3, 0.91], [2.42, 0.83], [2.45, 0.66]],
+    belt: [[-2.45, 0.8], [-2.35, 0.93], [-1.3, 0.97], [0, 0.95], [0.85, 0.93], [2.3, 0.88], [2.45, 0.64]],
+    bottom: [[-2.45, 0.46], [-2.3, 0.31], [-1.9, 0.27], [1.8, 0.25], [2.3, 0.31], [2.45, 0.45]],
+    hw: [[-2.45, 0.84], [-2.3, 0.9], [-1.2, 0.925], [0, 0.905], [1.5, 0.915], [2.3, 0.88], [2.45, 0.8]],
+    gh: [[-1.2, 0.8], [-0.3, 0.68], [0.25, 0.68], [0.85, 0.8]],
+    zones: { cowl: 0.85, roofF: 0.25, roofR: -0.3, deck: -1.2 },
+    doors: { FL: [-0.65, 0.98] },
+    sideGlass: [[-1.1, -0.67], [-0.62, 0.95]],
+    head: { y: 0.74, x0: 0.55, x1: 0.82, h: 0.1 },
+    tail: { y: 0.88, x0: 0.3, x1: 0.85, h: 0.09 },
+    seat: { x: 0.38, y: 1.0, z: -0.25 },
+    defaults: { engine: 'v8', drivetrain: 'rwd', diff: 'open', gearTop: 58 },
+  },
+  supercar: {
+    name: 'Vortex V12', kind: 'Supercar', L: 4.55, R: 0.34, axles: [1.38, -1.32],
+    mass: 1420, comY: 0.4, frontWeight: 0.43, cdA: 0.56, springHz: [2.3, 2.45], travel: [0.1, 0.09],
+    top: [[-2.275, 0.72], [-2.2, 0.95], [-1.8, 1.02], [-1.2, 1.05], [-0.6, 1.14], [-0.1, 1.17], [0.5, 1.1], [1.1, 0.82], [1.8, 0.66], [2.2, 0.55], [2.275, 0.45]],
+    belt: [[-2.275, 0.7], [-2.1, 0.9], [-1.2, 0.92], [-0.1, 0.86], [0.5, 0.84], [1.6, 0.68], [2.2, 0.52], [2.275, 0.42]],
+    bottom: [[-2.275, 0.32], [-2.1, 0.18], [-1.8, 0.13], [1.8, 0.12], [2.15, 0.15], [2.275, 0.25]],
+    hw: [[-2.275, 0.88], [-2.0, 0.99], [-1.2, 1.0], [-0.4, 0.93], [0.5, 0.92], [1.3, 0.97], [1.9, 0.92], [2.2, 0.82], [2.275, 0.72]],
+    gh: [[-1.2, 0.74], [-0.1, 0.58], [0.5, 0.6], [1.1, 0.74]],
+    zones: { cowl: 1.1, roofF: 0.5, roofR: -0.1, deck: -1.2 },
+    doors: { FL: [-0.55, 1.0] },
+    sideGlass: [[-0.95, -0.58], [-0.52, 1.0]],
+    head: { y: 0.58, x0: 0.5, x1: 0.84, h: 0.06 },
+    tail: { y: 0.82, x0: 0.2, x1: 0.9, h: 0.07 },
+    seat: { x: 0.36, y: 0.84, z: -0.15 },
+    defaults: { engine: 'v12', drivetrain: 'awd', diff: 'lsd', gearTop: 92, tire: 'sport' },
+  },
+  truck: {
+    name: 'Titan Box 7', kind: 'Box truck', L: 7.2, R: 0.48, axles: [2.6, -2.2],
+    mass: 6400, comY: 1.15, frontWeight: 0.45, cdA: 4.0, springHz: [1.35, 1.45], travel: [0.18, 0.15],
+    top: [[-3.6, 3.2], [-3.55, 3.3], [1.9, 3.3], [1.95, 2.66], [2.2, 2.63], [2.9, 2.5], [3.35, 1.62], [3.55, 1.3], [3.6, 1.0]],
+    belt: [[-3.6, 1.3], [1.95, 1.3], [2.3, 1.62], [3.3, 1.48], [3.6, 1.0]],
+    bottom: [[-3.6, 0.88], [-3.5, 0.72], [3.4, 0.66], [3.6, 0.82]],
+    hw: [[-3.6, 1.22], [1.9, 1.22], [2.0, 1.15], [3.4, 1.12], [3.6, 1.04]],
+    gh: [[1.95, 0.95], [2.9, 0.92]],
+    zones: { cowl: 2.9, roofF: 2.2, roofR: 1.95, deck: -3.55 },
+    doors: { FL: [2.0, 3.2] },
+    sideGlass: [[2.05, 3.1]],
+    head: { y: 0.92, x0: 0.62, x1: 1.0, h: 0.18 },
+    tail: { y: 1.0, x0: 0.95, x1: 1.15, h: 0.3 },
+    seat: { x: 0.55, y: 2.15, z: 2.55 },
+    defaults: { engine: 'diesel', drivetrain: 'rwd', diff: 'open', gearTop: 34, tire: 'offroad' },
+  },
+  bus: {
+    name: 'MetroLiner 12', kind: 'City bus', L: 11.5, R: 0.5, axles: [3.6, -2.6],
+    mass: 11500, comY: 1.2, frontWeight: 0.36, cdA: 6.4, springHz: [1.25, 1.3], travel: [0.16, 0.16],
+    top: [[-5.75, 2.9], [-5.7, 3.05], [-5.4, 3.12], [5.4, 3.12], [5.7, 3.0], [5.75, 2.6]],
+    belt: [[-5.75, 1.3], [5.4, 1.15], [5.75, 0.95]],
+    bottom: [[-5.75, 0.78], [-5.6, 0.42], [5.5, 0.42], [5.75, 0.72]],
+    hw: [[-5.75, 1.22], [-5.6, 1.27], [5.5, 1.27], [5.75, 1.2]],
+    gh: [[-5.5, 0.98], [5.5, 0.98]],
+    zones: { cowl: 5.45, roofF: 5.4, roofR: -5.4, deck: -5.6 },
+    doors: { FL: [3.9, 5.0], RL: [-0.8, 0.5] },
+    sideGlass: [[-5.3, -1.0], [-0.65, 0.35], [0.6, 3.7], [4.0, 5.35]],
+    head: { y: 0.85, x0: 0.75, x1: 1.15, h: 0.16 },
+    tail: { y: 1.25, x0: 1.05, x1: 1.22, h: 0.42 },
+    seat: { x: 0.72, y: 1.95, z: 4.75 },
+    defaults: { engine: 'diesel', drivetrain: 'rwd', diff: 'open', gearTop: 25, tire: 'street' },
+  },
+});
+
+export const PLAYER_BODIES = ['sedan', 'hatch', 'muscle', 'coupe', 'suv', 'pickup', 'van', 'classic', 'supercar', 'truck', 'bus'];
 
 // -----------------------------------------------------------------------------
 export const ENGINES = {
@@ -145,6 +213,16 @@ export const ENGINES = {
     name: '3.0L inline-6', type: 'ice', cylinders: 6, displacement: 3.0, sound: 'i6',
     torque: [[0, 0], [500, 150], [1000, 240], [2000, 285], [3000, 300], [4000, 310], [5000, 308], [6000, 295], [7000, 265], [7600, 230]],
     idle: 800, redline: 7200, limiter: 7400, inertia: 0.16, friction: [11, 3.2], popiness: 0.9, mass: 170,
+  },
+  v12: {
+    name: '6.5L V12', type: 'ice', cylinders: 12, displacement: 6.5, sound: 'v12',
+    torque: [[0, 0], [500, 260], [1000, 420], [2000, 560], [3000, 640], [4000, 690], [5000, 720], [6000, 715], [7000, 690], [8000, 640], [8700, 560]],
+    idle: 950, redline: 8500, limiter: 8800, inertia: 0.2, friction: [18, 5], popiness: 0.9, mass: 260,
+  },
+  diesel: {
+    name: '6.7L turbo-diesel', type: 'ice', cylinders: 6, displacement: 6.7, sound: 'diesel',
+    torque: [[0, 0], [400, 420], [700, 820], [1000, 1150], [1300, 1300], [1700, 1300], [2100, 1150], [2500, 900], [2800, 650]],
+    idle: 620, redline: 2600, limiter: 2800, inertia: 0.85, friction: [28, 9], popiness: 0.1, mass: 640,
   },
   ev: {
     name: 'Dual-motor electric', type: 'ev', sound: 'ev', maxTorque: 560, maxPower: 310000, maxRPM: 16000,
@@ -179,8 +257,9 @@ export const BODY_GEARS = {
   classic: [2.9, 1.75, 1.2, 0.92], // 4-on-the-floor
   truck: [5.2, 3.1, 1.95, 1.4, 1.0, 0.78],
   supercar: [3.1, 2.15, 1.65, 1.32, 1.1, 0.94, 0.8], // 7-speed DCT
+  bus: [3.4, 1.9, 1.3, 1.0, 0.75], // automatic city bus
 };
-export const BODY_TANKS = { sedan: 60, hatch: 45, muscle: 70, coupe: 55, suv: 80, pickup: 95, van: 80, classic: 50, truck: 120, supercar: 72 };
+export const BODY_TANKS = { sedan: 60, hatch: 45, muscle: 70, coupe: 55, suv: 80, pickup: 95, van: 80, classic: 50, truck: 120, supercar: 72, bus: 250 };
 
 export const PAINT_PRESETS = [
   '#b01e23', '#e8e8ea', '#101114', '#1f4fa8', '#f2b90c', '#2b7a3c', '#ff6a13', '#6b6f76',
@@ -369,7 +448,7 @@ export function buildTuning(cfg) {
     dims: { L, W, H, WB, zF, zR },
     wheels,
     antiRoll: [kF * 0.45 * cfg.antiRoll, kR * 0.3 * cfg.antiRoll],
-    maxSteer: body.kind === 'SUV' || body.kind === 'Pickup' || body.kind === 'Van' ? 0.56 : 0.6,
+    maxSteer: body.kind === 'City bus' || body.kind === 'Box truck' ? 0.62 : body.kind === 'SUV' || body.kind === 'Pickup' || body.kind === 'Van' ? 0.56 : 0.6,
     brakes: { max: brakeTorque, handbrake: 1900, fadeStart: cfg.brakeKit ? 0.78 : 0.55 },
     aero: { cdA: body.cdA + (cfg.spoiler === 'gt' ? 0.08 : cfg.spoiler === 'wing' ? 0.05 : 0) + kit * 0.12 + (cfg.flares ? 0.02 : 0), clA, balance: cfg.spoiler === 'none' ? (kit ? 0.55 : 0.5) : 0.35 },
     tire,

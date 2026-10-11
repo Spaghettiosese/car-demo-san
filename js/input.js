@@ -62,6 +62,7 @@ export const BINDINGS = {
   gearR: ['Backquote'],
   gearN: ['Digit0'],
   fob: ['KeyK'],
+  seatbelt: ['Semicolon'],
 };
 
 /** Actions the player may rebind, with labels for the controls screen. */
@@ -72,7 +73,7 @@ export const REBINDABLE = {
   wipers: 'Wipers', ignition: 'Ignition', cruise: 'Cruise control', limiter: 'Speed limiter', driveMode: 'Drive mode',
   camera: 'Camera', lookBack: 'Look back', lookLeft: 'Look left', lookRight: 'Look right', enterExit: 'Get in / out',
   reset: 'Recover car', repair: 'Repair', map: 'Map', phone: 'Phone', radio: 'Next station', siren: 'Siren',
-  replay: 'Replay', photo: 'Photo mode', hideHud: 'Hide HUD', restart: 'Restart event',
+  replay: 'Replay', photo: 'Photo mode', hideHud: 'Hide HUD', restart: 'Restart event', seatbelt: 'Seatbelt',
 };
 const DEFAULT_BINDINGS = JSON.parse(JSON.stringify(BINDINGS));
 try {

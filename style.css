@@ -382,3 +382,18 @@ body.pip #turn { top: 158px; }
 #spectate.hidden { display: none; }
 .scn { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; font-size: 12px; }
 .scn i { color: var(--dim); font-style: normal; }
+
+/* ---------- tutorial ---------- */
+#tutorial { position: absolute; left: 22px; top: 86px; width: min(420px, 80vw); background: rgba(10,14,22,0.9); border: 1px solid #2b4a6a; border-left: 4px solid var(--accent); border-radius: 12px; padding: 10px 14px; pointer-events: auto; z-index: 15; }
+#tutorial.hidden { display: none; }
+#tutorial.pop { animation: tutpop 0.35s ease-out; }
+@keyframes tutpop { from { transform: translateX(-12px); opacity: 0.3; } to { transform: none; opacity: 1; } }
+#tutorial .th { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+#tutorial .th b { color: var(--accent); letter-spacing: 0.04em; }
+#tutorial .steps { display: flex; gap: 4px; flex: 1; }
+#tutorial .steps i { width: 14px; height: 4px; border-radius: 2px; background: #2b313a; }
+#tutorial .steps i.d { background: #4cd964; }
+#tutorial .steps i.c { background: var(--accent); }
+#tutorial button { background: none; border: 1px solid #3a414b; color: var(--dim); border-radius: 6px; padding: 3px 8px; font: 600 11px var(--font); cursor: pointer; }
+#tutorial .tt { font-size: 14px; line-height: 1.5; }
+#tutorial kbd { background: #2b313a; border-radius: 4px; padding: 0 5px; font: 700 12px var(--font); }

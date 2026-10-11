@@ -200,16 +200,21 @@ export class Powertrain {
     const s = this.spec;
     const n = s.gears.length;
     this.limiterHold = this.rpm > s.redline * 0.97 ? (this.limiterHold || 0) + dt : 0;
+    // revs that stop climbing near the top (a tired or rich-running engine) also mean "shift"
+    const rise = (this.rpm - (this.prevShiftRpm ?? this.rpm)) / Math.max(dt, 1e-3);
+    this.prevShiftRpm = this.rpm;
+    this.plateau = throttle > 0.8 && this.rpm > s.redline * 0.82 && rise < 120 ? (this.plateau || 0) + dt : 0;
     const groundRpm = Math.abs(groundOmega * this.ratio()) * RPM;
     const modeK = this.mode === 'eco' ? 0.72 : this.mode === 'sport' ? 1.06 : 1;
     const upAt = Math.min(s.redline * 0.97, lerp(s.redline * 0.4, s.redline * 0.95, smoothstep(0.1, 0.9, throttle)) * modeK);
     // short-shift to calm wheelspin only if the next gear won't be bogged (or we'd just kick down again)
     const nextRpm = this.gear < n ? groundRpm * (this.ratio(this.gear + 1) / this.ratio()) : 0;
     const kickAt = lerp(s.idle * 1.6, s.redline * 0.55, throttle * throttle);
-    if (this.gear < n && grounded && this.sinceShift > 0.45 && (groundRpm > upAt || (this.limiterHold > 1.2 && nextRpm > kickAt))) {
+    if (this.gear < n && grounded && this.sinceShift > 0.45 && (groundRpm > upAt || ((this.limiterHold > 1.2 || this.plateau > 1) && nextRpm > kickAt * 1.15))) {
       this.shiftTo(this.gear + 1);
       this.lastUp = true;
       this.limiterHold = 0;
+      this.plateau = 0;
       return;
     }
     // sudden stop (crash, hard braking): drop straight to a sensible gear

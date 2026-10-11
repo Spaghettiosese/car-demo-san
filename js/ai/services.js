@@ -128,6 +128,8 @@ export class Services {
     }
     this.updateJets(dt);
     this.updateBreakdowns(dt);
+    if (!this.buses && g.traffic && g.state === 'play') this.buildBusLine();
+    this.updateBuses(dt);
   }
 
   updateUnit(u, dt) {
@@ -339,6 +341,154 @@ export class Services {
       const ped = g.peds?.spawnScripted(front, { goal: front, face: car });
       this.breakdowns.push({ car, ped });
       return;
+    }
+  }
+
+  // ------------------------------------------------------------ city buses
+  /** A bus line around the residential ring: shelters at four stops, two buses on the loop. */
+  buildBusLine() {
+    const g = this.game;
+    const city = g.city;
+    const loop = [[1, 1], [1, 5], [5, 5], [5, 1]].map(([i, j]) => city.node(i, j));
+    this.busLoop = loop;
+    // one stop on each side of the ring, mid-block, at the kerb
+    const segBetween = (a, b) => a.out.find((s) => s.to === city.node(a.i + Math.sign(b.i - a.i), a.j + Math.sign(b.j - a.j)));
+    const stops = [];
+    for (let k = 0; k < 4; k++) {
+      const a = loop[k], b = loop[(k + 1) % 4];
+      const n1 = city.node(a.i + Math.sign(b.i - a.i) * 2, a.j + Math.sign(b.j - a.j) * 2);
+      const seg = segBetween(n1, b);
+      if (!seg || seg.closed) continue;
+      const dist = seg.length * 0.55;
+      stops.push({ seg, dist, name: `${seg.name} stop` });
+    }
+    this.busStops = stops;
+    const glass = new THREE.MeshStandardMaterial({ color: 0xbfd8e8, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.2 });
+    const frame = new THREE.MeshStandardMaterial({ color: 0x2a3138, metalness: 0.6, roughness: 0.4 });
+    const sign = new THREE.MeshStandardMaterial({ color: 0x1f6fd1, emissive: 0x1f6fd1, emissiveIntensity: 0.3 });
+    for (const st of stops) {
+      const kerb = city.lanePoint(st.seg, 1, st.dist).addScaledVector(st.seg.right, CITY.LANE * 0.5 + CITY.SW * 0.55 + 0.4);
+      const yaw = Math.atan2(st.seg.dir.x, st.seg.dir.z);
+      const grp = new THREE.Group();
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.3, 3.6), glass);
+      back.position.set(-0.8, 1.3, 0);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 3.8), frame);
+      roof.position.set(0, 2.5, 0);
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.08, 2.4), frame);
+      bench.position.set(-0.45, 0.6, 0);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.8, 6), frame);
+      pole.position.set(0.7, 1.55, 2.2);
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.45), sign);
+      plate.position.set(0.7, 2.75, 2.2);
+      grp.add(back, roof, bench, pole, plate);
+      // the shelter's open side faces the road (the segment's -right)
+      grp.position.set(kerb.x, CITY.CURB, kerb.z);
+      grp.rotation.y = yaw; // local +x (the open side) faces the road
+      g.scene.add(grp);
+      st.kerb = kerb;
+      st.wait = city.lanePoint(st.seg, 1, st.dist);
+    }
+    // the buses
+    this.buses = [];
+    for (let k = 0; k < 2 && stops.length; k++) {
+      const st = stops[(k * 2) % stops.length];
+      const d0 = Math.max(8, st.dist - 60);
+      const p = city.lanePoint(st.seg, 1, d0);
+      const cfg = { ...configForBody('bus', DEFAULT_CONFIG), engine: 'diesel', paint: '#1f6fd1', livery: 'side', accent: '#f2f2f2', plate: `SDT ${10 + k}`, wheelStyle: 'steel', wheelColor: '#c8c8c8', tire: 'street', horn: 'truck' };
+      const car = new Car(g, cfg, { npc: true });
+      g.addCar(car);
+      car.placeAt(p.x, 0, p.z, Math.atan2(st.seg.dir.x, st.seg.dir.z));
+      car.phys.pt.running = true;
+      car.phys.pt.setSelector('D');
+      car.physicsActive = car.body.position.distanceTo(g.player.focus) < 150;
+      const drv = new Driver(car, g.traffic);
+      drv.setPersona('normal');
+      drv.speedFactor = 0.85;
+      drv.aggression = 0.2;
+      drv.noRecycle = true;
+      drv.routeGoal = this.nextCorner(st.seg.to);
+      drv.placeOnLane(st.seg, 1, d0);
+      g.traffic?.drivers.push(drv);
+      this.buses.push({ car, drv, stop: stops.indexOf(st), dwell: 0, rider: null });
+    }
+  }
+
+  /** The next corner of the loop after node n (going round in loop order). */
+  nextCorner(n) {
+    const L = this.busLoop;
+    const i = L.indexOf(n);
+    if (i >= 0) return L[(i + 1) % L.length];
+    // between corners: the corner this side of the ring leads to
+    let best = L[0], bd = Infinity;
+    for (let k = 0; k < L.length; k++) {
+      const a = L[k], b = L[(k + 1) % L.length];
+      const onSide = (n.i === a.i && a.i === b.i) || (n.j === a.j && a.j === b.j);
+      const d = Math.hypot(n.x - b.x, n.z - b.z);
+      if (onSide && d < bd) {
+        bd = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  updateBuses(dt) {
+    const g = this.game;
+    for (const b of this.buses || []) {
+      const { car, drv } = b;
+      if (car.removed) continue;
+      if (drv.state === 'wrecked') continue;
+      // keep heading round the ring
+      const goal = drv.routeGoal;
+      if (goal && Math.hypot(car.body.position.x - goal.x, car.body.position.z - goal.z) < 18) {
+        drv.routeGoal = this.nextCorner(goal);
+        drv.plan.clear();
+      }
+      const st = this.busStops[b.stop];
+      if (!st || !car.physicsActive) continue;
+      const p = car.body.position;
+      const along = (p.x - st.seg.start.x) * st.seg.dir.x + (p.z - st.seg.start.z) * st.seg.dir.z;
+      const lat = (p.x - st.seg.start.x) * st.seg.right.x + (p.z - st.seg.start.z) * st.seg.right.z;
+      const toGo = st.dist - along;
+      const onSeg = lat > 0 && lat < CITY.RW / 2 + 1 && toGo > -4 && toGo < 40;
+      if (onSeg && b.dwell <= 0 && !b.done) {
+        // pull in and stop at the shelter
+        const inp = car.phys.input;
+        if (toGo > 1.5) {
+          inp.throttle = Math.min(inp.throttle, toGo > 15 ? 0.3 : 0.12);
+          inp.brake = Math.max(inp.brake, clamp((car.speed - Math.max(1.5, toGo * 0.5)) * 0.25, 0, 1));
+        } else {
+          inp.throttle = 0;
+          inp.brake = 1;
+          if (car.speed < 0.4) {
+            b.dwell = 9;
+            car.sys.indicator = 'right';
+            // somebody gets on
+            if (g.peds && Math.random() < 0.7 && p.distanceTo(g.player.focus) < 120) {
+              const door = car.body.toWorldPoint(new THREE.Vector3(-car.boundsMax.x - 0.4, 0, car.boundsMax.z - 1.4), new THREE.Vector3());
+              b.rider = g.peds.spawnScripted(st.kerb.clone().add(new THREE.Vector3(0, 0.15, 0)), { goal: door, speed: 1.3 });
+            }
+          }
+        }
+      }
+      if (b.dwell > 0) {
+        b.dwell -= dt;
+        car.phys.input.throttle = 0;
+        car.phys.input.brake = 1;
+        if (b.rider && (b.rider.state === 'idle' || b.dwell < 1)) {
+          g.peds?.removePed(b.rider);
+          b.rider = null;
+        }
+        if (b.dwell <= 0) {
+          b.done = true;
+          car.sys.indicator = 'left';
+          setTimeout(() => (car.sys.indicator = 'none'), 2500);
+        }
+      }
+      if (b.done && toGo < -10) {
+        b.done = false;
+        b.stop = (b.stop + 1) % this.busStops.length;
+      }
     }
   }
 

@@ -12,10 +12,11 @@ export const CAR_PRICES = {
   muscle: { price: 38000, level: 5 },
   coupe: { price: 47000, level: 7 },
   supercar: { price: 145000, level: 11 },
+  bus: { price: 62000, level: 6 },
 };
 
 export const PART_PRICES = {
-  'engine:i4': 3000, 'engine:v6': 7000, 'engine:i6': 10000, 'engine:v8': 13000, 'engine:ev': 26000,
+  'engine:i4': 3000, 'engine:v6': 7000, 'engine:i6': 10000, 'engine:v8': 13000, 'engine:ev': 26000, 'engine:v12': 38000, 'engine:diesel': 9000,
   'turbo:small': 4500, 'turbo:big': 9500,
   'tune:1': 1800, 'tune:2': 4500, 'tune:3': 9000,
   'tire:street': 500, 'tire:sport': 1200, 'tire:slick': 2800, 'tire:offroad': 1400,
@@ -36,7 +37,7 @@ export const PART_PRICES = {
   'glowmode:pulse': 300, 'glowmode:rainbow': 450, calipers: 200, smokedtails: 250,
 };
 // level needed to buy a part (keeps big upgrades for later)
-export const PART_LEVEL = { 'bodykit:aero': 5, gearset: 4, rollcage: 3, boostctl: 3, 'turbo:big': 5, 'tune:2': 4, 'tune:3': 8, 'tire:slick': 5, 'engine:v8': 4, 'engine:ev': 9, 'engine:i6': 3, 'weight:2': 6, antilag: 3, 'spoiler:gt': 4, 'drivetrain:awd': 5 };
+export const PART_LEVEL = { 'bodykit:aero': 5, gearset: 4, rollcage: 3, boostctl: 3, 'turbo:big': 5, 'tune:2': 4, 'tune:3': 8, 'tire:slick': 5, 'engine:v8': 4, 'engine:ev': 9, 'engine:v12': 10, 'engine:i6': 3, 'weight:2': 6, antilag: 3, 'spoiler:gt': 4, 'drivetrain:awd': 5 };
 
 export const PART_NAMES = {
   engine: 'Engine swap', turbo: 'Turbo', tune: 'ECU tune', tire: 'Tyres', drivetrain: 'Drivetrain conversion', diff: 'Differential', exhaust: 'Exhaust',

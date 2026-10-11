@@ -38,7 +38,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F033 Fuel-pump prime sound at ON
 - [x] F034 Engine floods after long cranking
 - [x] F035 Cold start: fast idle and warm-up
-- [ ] F036 Manual choke on the classic car
+- [x] F036 Manual choke on the classic car
 - [x] F037 Seat height and fore-aft adjustment, saved per car
 - [x] F038 Look left / right keys in the cockpit
 - [x] F039 Head bump from road impacts
@@ -165,8 +165,8 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F154 Three career save slots
 - [x] F155 v1 car and settings migrated into the career
 - [x] F156 Autosave indicator
-- [ ] F157 Career intro tutorial
-- [ ] F158 Contextual hints
+- [x] F157 Career intro tutorial
+- [x] F158 Contextual hints
 - [x] F159 Map points of interest with a legend
 - [x] F160 Fast travel to the garage (taxi fee)
 
@@ -260,7 +260,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F243 Tow truck clears wrecks
 - [x] F244 Fire truck responds to car fires
 - [x] F245 Driver personalities: learner, elderly, boy-racer, drunk at night
-- [ ] F246 City buses with stops
+- [x] F246 City buses with stops
 - [x] F247 Delivery vans that double-park
 - [x] F248 NPC-vs-NPC crashes and arguments
 - [x] F249 NPCs honk at each other
@@ -338,7 +338,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 ## J. UI, HUD, settings and sandbox (316–350)
 - [x] F316 New main menu with Career and Free Roam
 - [x] F317 Phone (Tab): map, jobs, contacts, bank, messages, settings
-- [ ] F318 Text messages from contacts with job offers
+- [x] F318 Text messages from contacts with job offers
 - [x] F319 Key rebinding
 - [x] F320 Assist presets: Arcade, Realistic, Sim
 - [x] F321 Mouse sensitivity and invert Y that actually work
@@ -355,7 +355,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F332 Telemetry throttle and brake trace graph
 - [x] F333 Detailed damage report panel
 - [x] F334 Notification feed
-- [ ] F335 Step-by-step tutorial
+- [x] F335 Step-by-step tutorial
 - [x] F336 Loading-screen tips
 - [x] F337 Pause menu: resume, restart or quit the event
 - [x] F338 Frame-time graph overlay

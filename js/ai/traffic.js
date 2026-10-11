@@ -1279,7 +1279,7 @@ export class TrafficManager {
       d.update(dt);
       // recycle far away / hopeless cars (unless a tow truck has claimed the wreck)
       const hopeless = d.state === 'wrecked' && dist > 90 && !this.visible(car.body.position) && !car.towed;
-      if ((dist > 340 || hopeless) && d.state !== 'rage' && d.state !== 'confront' && !car.towed) {
+      if ((dist > 340 || hopeless) && !d.noRecycle && d.state !== 'rage' && d.state !== 'confront' && !car.towed) {
         this.spawnDriver(false, car) || (car.physicsActive = false);
       }
     }
@@ -1315,7 +1315,7 @@ export class TrafficManager {
     const focus = g.player.focus;
     if (this.drivers.length > want + 1) {
       // retire someone far away and out of sight
-      const i = this.drivers.findIndex((d) => d.state === 'drive' && d.car.body.position.distanceTo(focus) > 160 && !this.visible(d.car.body.position));
+      const i = this.drivers.findIndex((d) => d.state === 'drive' && !d.noRecycle && d.car.body.position.distanceTo(focus) > 160 && !this.visible(d.car.body.position));
       if (i >= 0) {
         const d = this.drivers[i];
         this.drivers.splice(i, 1);
