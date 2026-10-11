@@ -8,7 +8,7 @@ const { RW, LANE } = CITY;
 // kind: mass (kg), breakAt (m/s closing speed), dent (effective mass felt by the car), radius, height
 const KINDS = {
   lamp: { mass: 140, breakAt: 4.5, dent: 700, r: 0.16, h: 8 },
-  tree: { mass: 0, breakAt: Infinity, dent: 0, r: 0.3, h: 3 },
+  tree: { mass: 260, breakAt: 9, dent: 1100, r: 0.3, h: 3 }, // young city trees snap in a hard hit
   hydrant: { mass: 90, breakAt: 3.5, dent: 450, r: 0.22, h: 0.8 },
   trash: { mass: 18, breakAt: 0.3, dent: 30, r: 0.3, h: 1.0 },
   bench: { mass: 45, breakAt: 1.5, dent: 110, r: 0.55, h: 0.9 },
@@ -17,7 +17,8 @@ const KINDS = {
   cone: { mass: 3, breakAt: 0, dent: 4, r: 0.22, h: 0.75 },
   barrier: { mass: 30, breakAt: 0.5, dent: 80, r: 0.6, h: 1.0 },
   barrel: { mass: 22, breakAt: 0, dent: 50, r: 0.32, h: 0.9 },
-  signal: { mass: 0, breakAt: Infinity, dent: 0, r: 0.2, h: 6 },
+  signal: { mass: 200, breakAt: 11, dent: 1400, r: 0.2, h: 6 },
+  bollard: { mass: 70, breakAt: 6.5, dent: 600, r: 0.13, h: 0.95 },
 };
 
 function mat(color, opts = {}) {
@@ -43,6 +44,20 @@ function templates() {
     [new THREE.CylinderGeometry(0.16, 0.26, 3.2, 7), trunk, m4(0, 1.6, 0)],
     [new THREE.IcosahedronGeometry(2.2, 1), leaves, m4(0, 4.2, 0)],
     [new THREE.IcosahedronGeometry(1.6, 1), leaves, m4(0.6, 5.4, 0.3)],
+  ];
+  // steel bollard with a reflective band
+  const steel = mat(0x4a4f56, { metalness: 0.7, roughness: 0.4 });
+  const band = new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.4, emissive: 0x332700 });
+  T.bollard = [
+    [new THREE.CylinderGeometry(0.11, 0.13, 0.95, 10), steel, m4(0, 0.47, 0)],
+    [new THREE.CylinderGeometry(0.115, 0.115, 0.08, 10), band, m4(0, 0.78, 0)],
+    [new THREE.SphereGeometry(0.11, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), steel, m4(0, 0.95, 0)],
+  ];
+  // a broken-off signal pole (for the physics debris)
+  const sigDark = mat(0x1a1b1d, { metalness: 0.4 });
+  T.signal = [
+    [new THREE.CylinderGeometry(0.13, 0.16, 6.2, 8), sigDark, m4(0, 3.1, 0)],
+    [new THREE.BoxGeometry(0.4, 1.05, 0.3), mat(0x3b3a1f), m4(0, 2.9, 0.25)],
   ];
   const red = mat(0xb3261e, { metalness: 0.4 });
   T.hydrant = [
@@ -177,6 +192,17 @@ export class Props {
         }
       }
       if (b.trees) for (const [x, z] of b.trees) this.add('tree', x, z, rnd() * 6, CITY.CURB);
+      if (b.type === 'plaza') {
+        // a line of bollards keeps cars off the plaza (well, it tries)
+        for (const s of sides) {
+          const horiz = s.z !== undefined;
+          const a0 = horiz ? s.x0 : s.z0, a1 = horiz ? s.x1 : s.z1;
+          for (let a = a0 + 6; a < a1 - 5; a += 2.6) {
+            const x = horiz ? a : s.x - s.n[0] * 0.5, z = horiz ? s.z - s.n[1] * 0.5 : a;
+            this.add('bollard', x, z, 0, base);
+          }
+        }
+      }
       if (b.fountain) this.fountains.push({ p: b.fountain, t: 0 });
       if (b.cones) {
         const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
@@ -247,6 +273,24 @@ export class Props {
     this.scene.add(pools);
     this.pools = pools;
     this.poolMat = pmat;
+    // per-lamp glowing heads, so the street lights can come on one by one at dusk
+    const glowGeo = new THREE.BoxGeometry(0.36, 0.03, 0.58);
+    const glow = new THREE.InstancedMesh(glowGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), Math.max(1, lamps.length));
+    const off = new THREE.Color(0.12, 0.12, 0.11);
+    lamps.forEach((it, i) => {
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), it.yaw);
+      m.compose(p.set(it.x, it.y, it.z), q, s.set(1, 1, 1)).multiply(new THREE.Matrix4().makeTranslation(0, 7.75, 2.1));
+      glow.setMatrixAt(i, m);
+      glow.setColorAt(i, off);
+      pools.setColorAt(i, new THREE.Color(0, 0, 0));
+      it.lightAt = 0.22 + ((i * 7349) % 1000) / 1000 * 0.32; // each lamp's photocell is a little different
+      it.lit = false;
+    });
+    glow.count = lamps.length;
+    glow.instanceMatrix.needsUpdate = true;
+    glow.computeBoundingSphere();
+    this.scene.add(glow);
+    this.lampGlow = glow;
   }
 
   // ---------------------------------------------------------------- signals
@@ -276,7 +320,8 @@ export class Props {
       const corner = c.clone().addScaledVector(s.dir, -(RW / 2 + 1.3)).addScaledVector(s.right, RW / 2 + 1.3);
       m.compose(tmp.set(corner.x, CITY.CURB + 3.1, corner.z), q.identity(), one);
       poles.setMatrixAt(i, m);
-      this.world.addCylinder(corner.x, corner.z, 0.2, 0, 6.3, { kind: 'signal' });
+      const sig = { kind: 'signal', def: KINDS.signal, x: corner.x, z: corner.z, y: CITY.CURB, yaw: Math.atan2(-s.dir.x, -s.dir.z), idx: i, signal: true };
+      sig.cyl = this.world.addCylinder(corner.x, corner.z, 0.2, 0, 6.3, { kind: 'signal', ref: { breakable: true, item: sig } });
       // mast arm over the lanes (toward -right)
       const armLen = RW / 2 + 1.3 - LANE * 0.5;
       const armMid = corner.clone().addScaledVector(s.right, -armLen / 2);
@@ -311,6 +356,7 @@ export class Props {
     }
     lamps.setColorAt(0, new THREE.Color());
     this.signalLamps = lamps;
+    this.signalMeshes = { poles, arms, hMesh, lamps };
     this.signalHeads = heads;
     this.updateSignals(true);
   }
@@ -323,6 +369,7 @@ export class Props {
     };
     let dirty = false;
     for (const h of this.signalHeads) {
+      if (h.dead) continue;
       const st = this.city.signalFor(h.seg);
       if (st === h.state && !force) continue;
       h.state = st;
@@ -351,13 +398,26 @@ export class Props {
     cy_remove(this.world, it);
     // hide instance
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (const im of this.meshes[it.kind]) {
+    if (it.signal) {
+      // a whole signal corner: pole, mast arm, both heads and their lamps go dark
+      const S = this.signalMeshes;
+      S.poles.setMatrixAt(it.idx, zero);
+      S.arms.setMatrixAt(it.idx, zero);
+      for (let k = 0; k < 2; k++) S.hMesh.setMatrixAt(it.idx * 2 + k, zero);
+      for (let k = 0; k < 6; k++) S.lamps.setMatrixAt(it.idx * 6 + k, zero);
+      for (const im of Object.values(S)) im.instanceMatrix.needsUpdate = true;
+      this.signalHeads[it.idx].dead = true;
+    } else for (const im of this.meshes[it.kind]) {
       im.setMatrixAt(it.idx, zero);
       im.instanceMatrix.needsUpdate = true;
     }
     if (it.kind === 'lamp' && this.pools) {
       this.pools.setMatrixAt(it.idx, zero);
       this.pools.instanceMatrix.needsUpdate = true;
+      if (this.lampGlow) {
+        this.lampGlow.setMatrixAt(it.idx, zero);
+        this.lampGlow.instanceMatrix.needsUpdate = true;
+      }
     }
     // the car feels the hit
     if (car) {
@@ -409,8 +469,28 @@ export class Props {
 
   setNight(f) {
     this.night = f;
-    if (this.T.lampHeadMat) this.T.lampHeadMat.emissiveIntensity = f * 6;
-    if (this.poolMat) this.poolMat.opacity = f * 0.55;
+    if (this.poolMat) this.poolMat.opacity = Math.min(1, f * 1.2) * 0.55;
+    // lamps switch on one by one as it gets dark (and off again at dawn)
+    const lamps = this.byKind.lamp || [];
+    if (!this.lampGlow || !lamps.length) return;
+    let dirty = false;
+    const on = this._lampOn ||= new THREE.Color(3.2, 2.5, 1.6);
+    const off = this._lampOff ||= new THREE.Color(0.12, 0.12, 0.11);
+    const poolOn = this._poolOn ||= new THREE.Color(1, 1, 1);
+    const black = this._black ||= new THREE.Color(0, 0, 0);
+    for (let i = 0; i < lamps.length; i++) {
+      const it = lamps[i];
+      const lit = !it.broken && f > it.lightAt;
+      if (lit === it.lit) continue;
+      it.lit = lit;
+      this.lampGlow.setColorAt(i, lit ? on : off);
+      this.pools.setColorAt(i, lit ? poolOn : black);
+      dirty = true;
+    }
+    if (dirty) {
+      this.lampGlow.instanceColor.needsUpdate = true;
+      this.pools.instanceColor.needsUpdate = true;
+    }
   }
 
   /** Stand the cones back up (after a slalom run). */

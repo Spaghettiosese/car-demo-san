@@ -611,6 +611,32 @@ export function installExtras(AudioEngine) {
     this.heli.g.gain.setTargetAtTime(on ? 0.9 : 0, t, 0.3);
   };
 
+  /** A distant airliner: a low roar that follows the plane across the sky. */
+  P.jetRumble = function (pos, on) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    if (!this.jet) {
+      if (!on) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.brown;
+      src.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 260;
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      const p = this.makePanner(200, 0.6);
+      src.connect(f);
+      f.connect(g);
+      g.connect(p);
+      p.connect(this.worldBus);
+      src.start();
+      this.jet = { g, p };
+    }
+    this.setPannerPos(this.jet.p, pos);
+    this.jet.g.gain.setTargetAtTime(on ? 0.5 : 0, t, 1.5);
+  };
+
   /** Relay sound for the player's indicators: each body has its own click. */
   P.relay = function (car, on, interior) {
     if (car.phys.pt.ev) this.tone(on ? 1900 : 1500, 0.03, { gain: interior ? 0.05 : 0.015 });

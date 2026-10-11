@@ -266,7 +266,7 @@ export class HUD {
       }
       const h = g.env.hour;
       const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-      const w = { clear: '☀ Clear', cloudy: '☁ Cloudy', rain: '🌧 Rain', storm: '⛈ Storm', fog: '🌫 Fog' }[g.env.weather];
+      const w = { clear: '☀ Clear', cloudy: '☁ Cloudy', rain: '🌧 Rain', storm: '⛈ Storm', fog: '🌫 Fog', snow: '❄ Snow' }[g.env.weather];
       this.subEl.textContent = `San Demo · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${w}`;
     }
     const inCar = !!car && g.player.mode === 'car';

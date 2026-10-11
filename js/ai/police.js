@@ -406,7 +406,7 @@ export class PoliceManager {
   }
 
   onPropHit(item) {
-    if (item.kind === 'lamp' || item.kind === 'hydrant' || item.kind === 'mailbox') this.offense('property');
+    if (item.kind === 'lamp' || item.kind === 'hydrant' || item.kind === 'mailbox' || item.kind === 'signal' || item.kind === 'tree' || item.kind === 'bollard') this.offense('property');
   }
 
   // ------------------------------------------------------------ per frame

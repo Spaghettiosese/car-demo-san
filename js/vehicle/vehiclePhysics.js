@@ -233,6 +233,12 @@ export class VehiclePhysics {
           }
         }
         w.slick = world.slicks && world.slicks.length ? world.slickAt(o.x, o.z, this.wet) : 1;
+        // deep sand: the tyres dig in, more so when slow or spinning
+        if (w.mat && w.mat.name === 'sand') {
+          const slip = Math.abs((w.omega || 0) * R - (w.vx || 0));
+          w.sink = Math.min(0.09, (w.sink || 0) * 0.98 + 0.004 + slip * 0.0006) * (1 - Math.min(0.6, Math.abs(w.vx || 0) / 30));
+          best -= w.sink;
+        } else w.sink = 0;
         const sHit = (o.y - best) / upY;
         w.sHit = sHit;
         if (sHit < w.sMax) {
@@ -307,7 +313,9 @@ export class VehiclePhysics {
       let grip = surf.grip;
       if (tire.offroad && surf.grip < 0.9) grip = Math.min(0.95, grip + 0.22);
       const ls = clamp(1 - tire.loadSens * (w.load / w.staticLoad - 1), 0.7, 1.15);
-      const wetMul = 1 - this.wet * (1 - tire.wet) * (1 + w.wear * 0.8);
+      // snow on the road: winter tyres would help; the stock ones (and slicks) really don't
+      const snowMul = 1 - (this.snow || 0) * (tire.wet > 0.85 ? 0.38 : 0.52);
+      const wetMul = (1 - this.wet * (1 - tire.wet) * (1 + w.wear * 0.8)) * snowMul;
       const opt = tire.optTemp || 70;
       const thermal = 0.9 + 0.1 * Math.exp(-(((w.temp - opt) / 45) ** 2));
       const worn = 1 - 0.3 * Math.pow(w.wear, 1.6);

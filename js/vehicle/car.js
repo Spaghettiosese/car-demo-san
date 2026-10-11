@@ -141,6 +141,7 @@ export class Car {
   }
 
   placeAt(x, y, z, yaw) {
+    this.placedT = this.game.physics?.time ?? 0; // impacts right after a teleport aren't crashes
     this.phys.resetTo(x, y, z, yaw);
     this.prevVel.set(0, 0, 0);
     this.syncVisual(0);

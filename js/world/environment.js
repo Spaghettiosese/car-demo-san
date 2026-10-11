@@ -209,6 +209,7 @@ export class Environment {
   }
 
   update(dt, focus, camPos) {
+    const k0 = (d) => Math.min(1, d * 0.25);
     this.time += dt;
     if (!this.frozen) this.hour = (this.hour + dt * this.timeScale) % 24;
     // weather targets
@@ -218,7 +219,12 @@ export class Environment {
       rain: { cloud: 0.9, rain: 0.8, fog: 0.35 },
       storm: { cloud: 1, rain: 1, fog: 0.45 },
       fog: { cloud: 0.6, rain: 0, fog: 1 },
-    }[this.weather];
+      snow: { cloud: 0.85, rain: 0, fog: 0.4 },
+    }[this.weather] || { cloud: 0.12, rain: 0, fog: 0 };
+    // snow falls, settles on the roads over a minute or two, melts slowly afterwards
+    this.snow = lerp(this.snow || 0, this.weather === 'snow' ? 1 : 0, k0(dt));
+    if (this.weather === 'snow') this.snowCover = Math.min(1, (this.snowCover || 0) + dt / 90);
+    else this.snowCover = Math.max(0, (this.snowCover || 0) - dt / 240);
     const k = Math.min(1, dt * 0.25);
     this.cloud = lerp(this.cloud, W.cloud, k);
     this.rain = lerp(this.rain, W.rain, k);

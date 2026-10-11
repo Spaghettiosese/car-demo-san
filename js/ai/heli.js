@@ -10,8 +10,9 @@ const _w = new THREE.Vector3();
  * up with a searchlight at night. Rotor sound is positional.
  */
 export class PoliceHeli {
-  constructor(game) {
+  constructor(game, opts = {}) {
     this.game = game;
+    this.opts = opts;
     this.active = false;
     this.leaving = false;
     this.root = this.build();
@@ -25,7 +26,7 @@ export class PoliceHeli {
 
   build() {
     const g = new THREE.Group();
-    const body = new THREE.MeshStandardMaterial({ color: 0x1b2a4a, roughness: 0.45, metalness: 0.4 });
+    const body = new THREE.MeshStandardMaterial({ color: this.opts.color ?? 0x1b2a4a, roughness: 0.45, metalness: 0.4 });
     const white = new THREE.MeshStandardMaterial({ color: 0xe8ecf0, roughness: 0.5, metalness: 0.2 });
     const glass = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.1, metalness: 0.6, transparent: true, opacity: 0.8 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.6, metalness: 0.5 });
@@ -143,7 +144,7 @@ export class PoliceHeli {
     this.navR.visible = Math.floor(g.physics.time * 1.2) % 2 === 0;
     // searchlight at night
     const night = g.env.night;
-    if (target && !this.leaving) {
+    if (target && !this.leaving && this.opts.searchlight !== false) {
       this.spot.target.position.copy(this.root.worldToLocal(_v.copy(target)));
       this.spot.intensity = night > 0.3 ? 900 * night : 0;
       const from = this.root.localToWorld(_w.set(0, -1.1, 1.4));
@@ -156,7 +157,7 @@ export class PoliceHeli {
       this.spot.intensity = 0;
       this.beam.material.opacity = 0;
     }
-    g.audio?.heliRotor?.(this.pos, d, true);
+    if (!this.opts.quiet) g.audio?.heliRotor?.(this.pos, d, true);
     if (this.leaving && this.pos.distanceTo(g.player.focus) > 500) this.despawn();
   }
 

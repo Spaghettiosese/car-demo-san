@@ -531,6 +531,7 @@ export class City {
       if (opts.shops) {
         for (const face of opts.shops) {
           const hS = 4.2, o = 0.25;
+          (this.shopFronts ||= []).push({ x0, x1, z0, z1, face, base, h: hS });
           const off = rnd() * 8;
           if (face === 'n') shops.quad([x0, base, z1 + o], [x1, base, z1 + o], [x1, base + hS, z1 + o], [x0, base + hS, z1 + o], [0, 0, 1], [[off, 0], [off + (x1 - x0) / 60, 0], [off + (x1 - x0) / 60, 1], [off, 1]], 0);
           if (face === 's') shops.quad([x1, base, z0 - o], [x0, base, z0 - o], [x0, base + hS, z0 - o], [x1, base + hS, z0 - o], [0, 0, -1], [[off, 0], [off + (x1 - x0) / 60, 0], [off + (x1 - x0) / 60, 1], [off, 1]], 0);
@@ -901,6 +902,19 @@ export class City {
       brushes.push(m);
     }
     this.carWash = { x: cx, z: cz, x0: cx - W / 2, x1: cx + W / 2, z0, z1, brushes, spin: 0 };
+  }
+
+  /** Is p (world) right at a storefront window? Returns { nx, nz } facing out, or null. */
+  shopWindowAt(p) {
+    for (const f of this.shopFronts || []) {
+      if (p.y < f.base + 0.3 || p.y > f.base + f.h) continue;
+      const t = 1.2;
+      if (f.face === 'n' && Math.abs(p.z - f.z1) < t && p.x > f.x0 && p.x < f.x1) return { nx: 0, nz: 1, x: p.x, z: f.z1 + 0.27 };
+      if (f.face === 's' && Math.abs(p.z - f.z0) < t && p.x > f.x0 && p.x < f.x1) return { nx: 0, nz: -1, x: p.x, z: f.z0 - 0.27 };
+      if (f.face === 'e' && Math.abs(p.x - f.x1) < t && p.z > f.z0 && p.z < f.z1) return { nx: 1, nz: 0, x: f.x1 + 0.27, z: p.z };
+      if (f.face === 'w' && Math.abs(p.x - f.x0) < t && p.z > f.z0 && p.z < f.z1) return { nx: -1, nz: 0, x: f.x0 - 0.27, z: p.z };
+    }
+    return null;
   }
 
   /** Visible + physical ramp. */

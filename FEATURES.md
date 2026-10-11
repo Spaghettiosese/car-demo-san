@@ -96,13 +96,13 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F089 Hydrolocked engine after driving into deep water
 - [x] F090 Electrics short out in water
 - [x] F091 Water fills the cabin (cockpit overlay)
-- [ ] F092 Breakable small trees in the city
-- [ ] F093 Breakable traffic signals
-- [ ] F094 Breakable bollards
-- [ ] F095 Breakable shop windows
+- [x] F092 Breakable small trees in the city
+- [x] F093 Breakable traffic signals
+- [x] F094 Breakable bollards
+- [x] F095 Breakable shop windows
 - [x] F096 Pushable harbor crates and pallets (physics debris)
 - [x] F097 New surfaces: rock, sand and gravel
-- [ ] F098 Sand: deep drag, sinking feel and sand plumes
+- [x] F098 Sand: deep drag, sinking feel and sand plumes
 - [x] F099 Hill-start assist
 - [x] F100 Tyre blowouts from overheating or wear
 
@@ -233,26 +233,26 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F218 A one-way street
 - [x] F219 Roundabout at the harbor entrance
 - [x] F220 EV chargers at the gas station (world props)
-- [ ] F221 Weather that changes over time
+- [x] F221 Weather that changes over time
 - [x] F222 Puddles in the rain
-- [ ] F223 Wind (swaying trees, flags)
-- [ ] F224 Snow weather with low grip
-- [ ] F225 A rainbow after rain
-- [ ] F226 Shooting stars at night
-- [ ] F227 Street lights switch on one by one at dusk
-- [ ] F228 Animated billboards
+- [x] F223 Wind (swaying trees, flags)
+- [x] F224 Snow weather with low grip
+- [x] F225 A rainbow after rain
+- [x] F226 Shooting stars at night
+- [x] F227 Street lights switch on one by one at dusk
+- [x] F228 Animated billboards
 - [x] F229 Ambient sound by district (park, downtown, beach, harbor)
 - [x] F230 Seagulls at the beach and harbor
-- [ ] F231 Bird flocks over the park
-- [ ] F232 Boats moving on the sea
-- [ ] F233 Ambient plane and helicopter flyovers
+- [x] F231 Bird flocks over the park
+- [x] F232 Boats moving on the sea
+- [x] F233 Ambient plane and helicopter flyovers
 - [x] F234 Pedestrians walking the sidewalks
 - [x] F235 Pedestrians cross at crosswalks with the signals
 - [x] F236 Pedestrians dodge cars and react to the horn
 - [x] F237 Pedestrians can be knocked over (and the police care)
 - [x] F238 Pedestrian variety: joggers, dog walkers
 - [x] F239 Parking-lot cars with alarms
-- [ ] F240 Fireworks over the harbor at night
+- [x] F240 Fireworks over the harbor at night
 
 ## G. Traffic and police AI (241–275)
 - [x] F241 Traffic yields to sirens

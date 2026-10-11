@@ -20,6 +20,7 @@ import { PlayerDriver } from './player.js';
 import { HUD } from './ui/hud.js';
 import { PhotoMode } from './ui/photo.js';
 import { Sandbox } from './sandbox.js';
+import { Ambient } from './world/ambient.js';
 import { Replay } from './replay.js';
 import { clamp, lerp, KMH } from './core/util.js';
 
@@ -174,6 +175,7 @@ export class Game {
     this.replay = new Replay(this);
     this.photo = new PhotoMode(this);
     this.sandbox = new Sandbox(this);
+    this.ambient = new Ambient(this);
     this.spawnPlayer(this.carConfig);
     progress(0.95, 'Warming up tyres…');
     await tick();
@@ -466,6 +468,8 @@ export class Game {
         if (dv > 4) this.fx.sparks(p, n, car.body.velocity, Math.min(40, dv * 2));
       }
       if (kind === 'building' || kind === 'wall') this.fx.impactDust(p, Math.min(2, dv / 8));
+      if (kind === 'building' && dv > 5) this.smashShopWindow(p, dv, car);
+      if (dv > 8) this.ambient?.onNoise(p, Math.min(2, dv / 12));
       if (!(other && other.id < car.id)) this.audio?.impact?.(p, dv, kind, car);
     }
     if (isPlayer && kind === 'wall' && this.city.crashWall && p.x > this.city.crashWall.x - 6 && dv > 4 && !this.wallMsgT) {
@@ -478,7 +482,7 @@ export class Game {
       if (dv > 6) this.hud.hurt(Math.min(0.9, dv / 25));
       if (dv > 5) this.stats.crashes++;
       if (dv > 16 && this.settings.slowmo && this.slowmoTimer <= 0) this.startSlowmo(1.6);
-      if (car === this.player.car) this.replay?.onCrash(dv);
+      if (car === this.player.car && this.physics.time - (car.placedT ?? -9) > 1.5) this.replay?.onCrash(dv);
       this.interior?.onImpact?.(dv, p);
       if (dv > 12 && !car.sys.seatbelt) this.cam.addShake(0.8);
     }
@@ -758,8 +762,12 @@ export class Game {
     this.city.setWetness(this.env.wetness);
     this.terrain.setWetness(this.env.wetness);
     this.coast.setWetness(this.env.wetness);
+    this.ambient?.update(sim);
     this.coast.setNight(night);
-    for (const c of this.cars) c.phys.wet = this.env.wetness;
+    for (const c of this.cars) {
+      c.phys.wet = this.env.wetness;
+      c.phys.snow = this.env.snowCover || 0;
+    }
     this.city.hillsMat.color.setRGB(0.32, 0.38, 0.25).multiplyScalar(0.25 + 0.75 * (1 - night));
     this.fx.setAmbient(0.1 + 0.87 * (1 - night));
 
@@ -894,6 +902,30 @@ export class Game {
     this.hud.notify(`💥 Crash test · ${this.fmtSpeed(c.v)}`,
       `Impact ${this.fmtSpeed(c.impactV)} · peak ${Math.round(c.peakG)} g · crumple ${crumple.toFixed(2)} m<br>Body ${pct(d.body)} · engine ${pct(d.engine)}${off ? ` · ${off} wheel${off > 1 ? 's' : ''} off` : ''} · glass ${d.glass.filter((x) => x >= 1).length} broken<br>Airbag ${this.interior?.airbag > 0 ? 'deployed' : 'not deployed'} · occupant ${injury} · ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} safety`, '', 14);
     this.cam.setMode(c.cam || 'chase');
+  }
+
+  /** Driving into a storefront breaks the window: glass everywhere, a hole left behind. */
+  smashShopWindow(p, dv, car) {
+    const w = this.city.shopWindowAt(p);
+    if (!w) return;
+    const smashed = (this.smashed ||= []);
+    if (smashed.some((q) => Math.hypot(q.x - w.x, q.z - w.z) < 2.5)) return;
+    if (smashed.length > 60) smashed.shift().m.removeFromParent();
+    // the hole: a dark, jagged decal with shards around the edge
+    const tex = (this.smashTex ||= smashTexture());
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.6), new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 0.4 }));
+    m.position.set(w.x, Math.max(1.4, Math.min(p.y + 0.4, 2.6)), w.z);
+    m.rotation.y = Math.atan2(w.nx, w.nz);
+    this.scene.add(m);
+    smashed.push({ x: w.x, z: w.z, m });
+    const at = new THREE.Vector3(w.x, m.position.y, w.z);
+    this.fx.glass(at, 40 + Math.min(60, dv * 4));
+    this.audio?.glass?.(car, 1);
+    if (car === this.player.car) {
+      this.police?.offense?.('property');
+      this.career?.charge?.(Math.round(400 + dv * 30), 'Smashed shop window', false, true);
+      this.toast('💥 You went through a shop window!', 'warn', 2.5);
+    }
   }
 
   /** Photo mode: free camera, sim paused. Pass on=true/false to force a state. */
@@ -1102,7 +1134,10 @@ export class Game {
         const dir = w.f;
         this.skids.add(key, w.cp, dir, w.width, skid * (wet > 0.5 ? 0.4 : 1), loose ? [0.18, 0.13, 0.08] : [0.02, 0.02, 0.02]);
         if (!loose && slide > 6 && w.slip > 1.4 && near) this.fx.tireSmoke(w.cp, v, clamp((slide - 6) / 12, 0.1, 1) * (1 - wet * 0.7) * dt * 60 * 0.5);
-        if (loose && car.speed > 4 && near) this.fx.dust(w.cp, v, w.mat.dust || [0.5, 0.45, 0.35], clamp(car.speed / 20 + slide / 10, 0, 1) * dt * 40);
+        const sand = loose && w.mat.name === 'sand';
+        if (loose && (car.speed > 4 || (sand && slide > 2)) && near) this.fx.dust(w.cp, v, w.mat.dust || [0.5, 0.45, 0.35], clamp(car.speed / 20 + slide / 10, 0, 1) * dt * 40 * (sand ? 2.6 : 1));
+        // sand: a rooster tail thrown up behind spinning tyres
+        if (sand && slide > 3 && near) this.fx.dust(w.cp.clone().setY(w.cp.y + 0.25), _v.copy(v).multiplyScalar(-0.3).setY(3 + slide * 0.2), w.mat.dust, clamp(slide / 12, 0, 1) * dt * 50);
         if (wet > 0.3 && car.speed > 7 && near) this.fx.spray(w.cp, v, wet * clamp(car.speed / 25, 0, 1) * dt * 50);
       });
       // exhaust
@@ -1460,3 +1495,37 @@ game
     msg.textContent = 'Failed to start: ' + e.message;
     window.__ready = true;
   });
+
+function smashTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 208;
+  const x = c.getContext('2d');
+  const cx = 128, cy = 110;
+  // jagged hole
+  x.fillStyle = 'rgba(6,8,10,0.92)';
+  x.beginPath();
+  for (let k = 0; k < 22; k++) {
+    const a = (k / 22) * Math.PI * 2, r = 55 + Math.random() * 45;
+    x.lineTo(cx + Math.cos(a) * r * 1.2, cy + Math.sin(a) * r);
+  }
+  x.fill();
+  // radial cracks in the remaining glass
+  x.strokeStyle = 'rgba(230,240,250,0.8)';
+  x.lineWidth = 1.4;
+  for (let k = 0; k < 18; k++) {
+    const a = Math.random() * Math.PI * 2;
+    let px = cx + Math.cos(a) * 70, py = cy + Math.sin(a) * 60;
+    x.beginPath();
+    x.moveTo(px, py);
+    for (let j = 0; j < 4; j++) {
+      px += Math.cos(a + (Math.random() - 0.5)) * 14;
+      py += Math.sin(a + (Math.random() - 0.5)) * 12;
+      x.lineTo(px, py);
+    }
+    x.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
