@@ -672,6 +672,12 @@ export class Car {
     // wipers
     const wa = this.sys.wiperAngle;
     for (const [i, wp] of m.details.wipers.entries()) wp.rotation.y = -wa * 1.45 * (i === 0 ? 1 : 1);
+    // underglow controller modes
+    const ug = m.details.underglow;
+    if (ug && this.cfg.underglowMode && this.cfg.underglowMode !== 'steady') {
+      if (this.cfg.underglowMode === 'pulse') ug.material.opacity = 0.45 + 0.45 * Math.sin(time * 3);
+      else ug.material.color.setHSL((time * 0.15) % 1, 1, 0.55);
+    }
     // police bar
     if (m.details.lightbar) {
       const lb = m.details.lightbar;

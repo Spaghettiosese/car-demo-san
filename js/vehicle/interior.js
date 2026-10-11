@@ -614,6 +614,45 @@ export class Interior {
       ws.group.add(this.wsOverlay);
     }
 
+    // phone on a dash mount, right of the cluster
+    if (this.game.phone && this.game.phone.mountTex) {
+      const pm = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.13, 0.009), mat(0x111111, 0.4, 0.3));
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.068, 0.12), new THREE.MeshBasicMaterial({ map: this.game.phone.mountTex }));
+      scr.position.z = -0.0055;
+      scr.rotation.y = Math.PI;
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.06, 6), mat(0x222222, 0.6));
+      arm.rotation.x = Math.PI / 2;
+      arm.position.z = 0.035;
+      pm.add(body, scr, arm);
+      pm.position.set(sx - 0.33, dashTop + 0.06, Z.cowl - 0.1);
+      pm.rotation.set(0.25, 0.25, 0);
+      g.add(pm);
+      this.phoneMount = pm;
+      this.clickable([body, scr], () => 'Phone (<kbd>Tab</kbd>)', () => this.game.phone.toggle(true));
+    }
+    // roll cage
+    if (car.cfg.rollCage) {
+      const cage = mat(0x3a3d42, 0.4, 0.8);
+      const bar = (a, b2) => {
+        const d = new THREE.Vector3().subVectors(b2, a);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, d.length(), 8), cage);
+        m.position.copy(a).addScaledVector(d, 0.5);
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+        g.add(m);
+      };
+      const zb = sz - 0.35, za = Z.roofF - 0.05;
+      const top = (z) => f.top(z) - 0.06;
+      const hw = (z) => f.hw(z) * 0.82;
+      const fl = f.belt(zb) - 0.55;
+      for (const s of [1, -1]) {
+        bar(new THREE.Vector3(s * hw(zb), fl, zb), new THREE.Vector3(s * hw(zb) * 0.95, top(zb), zb));
+        bar(new THREE.Vector3(s * hw(zb) * 0.95, top(zb), zb), new THREE.Vector3(s * hw(za) * 0.9, top(za), za));
+        bar(new THREE.Vector3(s * hw(za) * 0.9, top(za), za), new THREE.Vector3(s * hw(Z.cowl), f.belt(Z.cowl) - 0.2, Z.cowl - 0.05));
+      }
+      bar(new THREE.Vector3(hw(zb) * 0.95, top(zb), zb), new THREE.Vector3(-hw(zb) * 0.95, top(zb), zb));
+      bar(new THREE.Vector3(hw(zb), fl, zb), new THREE.Vector3(-hw(zb) * 0.95, top(zb), zb));
+    }
     // airbag
     this.airbagMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), mat(0xf2f2ee, 0.9));
     this.airbagMesh.visible = false;

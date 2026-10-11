@@ -453,8 +453,16 @@ export function paintLivery(ctx, W, H, cfg, prof, opts = {}) {
     }
     drawSideText(ctx, W, H, prof, 'TAXI', '#111', 0.16, 0.28);
   }
-  if (livery === 'racing' || opts.number) {
-    drawSideText(ctx, W, H, prof, String(opts.number || 42), '#111', 0.14, 0.4, true);
+  // two-tone: contrasting roof or lower body
+  if (cfg.twoTone === 'roof' && !opts.simple) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(u(Z.roofR - 0.15), y(0.65), u(Z.roofF + 0.25) - u(Z.roofR - 0.15), 0.3 * H);
+  } else if (cfg.twoTone === 'lower' && !opts.simple) {
+    ctx.fillStyle = accent;
+    for (const [yy, hh] of sideRows(0.0, 0.14)) ctx.fillRect(0, yy, W, hh);
+  }
+  if (livery === 'racing' || opts.number || cfg.raceNumber) {
+    drawSideText(ctx, W, H, prof, String(opts.number || cfg.raceNumber || 42), '#111', 0.14, 0.4, true);
   }
   // panel gaps
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
@@ -611,7 +619,7 @@ export function buildCarModel(cfg, tuning, opts = {}) {
   const hardness = (p) => {
     let h = 1;
     const cabin = p.z < Z.cowl + 0.1 && p.z > (Z.bed ? Z.bed[1] : Z.deck) - 0.15;
-    if (cabin) h = p.y > beltMid + 0.2 ? 1.5 : 2.4;
+    if (cabin) h = (p.y > beltMid + 0.2 ? 1.5 : 2.4) * (cfg.rollCage ? 1.7 : 1);
     if (p.z > Z.cowl + 0.2 && p.z < prof.zF - 0.35 && Math.abs(p.x) < 0.5 && p.y > 0.2 && p.y < beltMid - 0.1) h = 3.6;
     if (p.z > prof.zF - 0.3 || p.z < prof.zR + 0.3) h *= 0.75;
     if (p.y < 0.35) h *= 1.3; // floor pan / rails
@@ -1045,19 +1053,77 @@ function buildDetails(cfg, prof, design, parts, tuning, npc, opts) {
     d.mirrors.push({ group: g, glass: glassM, side: s, rest: new THREE.Vector3(x, y, z), attached: true, door });
   }
   // exhausts
-  const nEx = cfg.exhaust === 'straight' ? 2 : cfg.exhaust === 'sport' ? 2 : 1;
+  const tipStyle = npc ? 'round' : cfg.exhaustTip || 'round';
+  const sides = cfg.exhaust === 'straight' || cfg.exhaust === 'sport' || tipStyle !== 'round' ? [1, -1] : [-1];
+  const perSide = tipStyle === 'quad' ? 2 : tipStyle === 'dual' ? (sides.length === 1 ? 2 : 1) : 1;
   const exY = Math.max(0.22, f.bottom(prof.zR + 0.15) + 0.02);
-  for (let i = 0; i < nEx; i++) {
-    const s = nEx === 1 ? -1 : i === 0 ? 1 : -1;
-    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.16, 12, 1, true), MATS.chrome());
-    tip.rotation.x = Math.PI / 2;
-    tip.position.set(s * prof.hwMax * 0.55, exY, prof.zR + 0.03);
-    design.add(tip);
-    const inner = new THREE.Mesh(new THREE.CircleGeometry(0.04, 12), new THREE.MeshBasicMaterial({ color: 0x050505 }));
-    inner.position.set(tip.position.x, exY, prof.zR + 0.06);
-    inner.rotation.y = Math.PI;
-    design.add(inner);
-    d.exhausts.push(new THREE.Vector3(tip.position.x, exY, prof.zR - 0.05));
+  for (const s of sides)
+    for (let k = 0; k < perSide; k++) {
+      const x = s * prof.hwMax * 0.55 + (perSide > 1 ? (k - 0.5) * 0.12 * s : 0);
+      const geo = tipStyle === 'square' ? new THREE.BoxGeometry(0.14, 0.07, 0.16) : new THREE.CylinderGeometry(0.045, 0.05, 0.16, 12, 1, true);
+      const tip = new THREE.Mesh(geo, MATS.chrome());
+      if (tipStyle !== 'square') tip.rotation.x = Math.PI / 2;
+      tip.position.set(x, exY, prof.zR + 0.03);
+      design.add(tip);
+      const inner = new THREE.Mesh(tipStyle === 'square' ? new THREE.PlaneGeometry(0.12, 0.055) : new THREE.CircleGeometry(0.04, 12), new THREE.MeshBasicMaterial({ color: 0x050505 }));
+      inner.position.set(x, exY, prof.zR + 0.06);
+      inner.rotation.y = Math.PI;
+      design.add(inner);
+      d.exhausts.push(new THREE.Vector3(x, exY, prof.zR - 0.05));
+    }
+  // body kit: splitter, skirts, diffuser (+ canards on the aero kit)
+  if (!npc && cfg.bodyKit && cfg.bodyKit !== 'stock') {
+    const aero = cfg.bodyKit === 'aero';
+    const kitMat = MATS.trim();
+    const fy = 0.13, fz = skinZ(prof, 0, 0.2, 1);
+    const split = new THREE.Mesh(new THREE.BoxGeometry(prof.hwMax * 1.9, 0.025, aero ? 0.22 : 0.12), kitMat);
+    split.position.set(0, fy, fz - (aero ? 0.02 : 0.04));
+    (parts.bumperF ? parts.bumperF.group : design).add(split);
+    if (parts.bumperF) split.position.sub(parts.bumperF.pivot);
+    for (const sd of [1, -1]) {
+      const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, b.axles[0] - b.axles[1] - prof.Ra * 2.1), kitMat);
+      skirt.position.set(sd * (f.hw(0) + 0.005), 0.17, (b.axles[0] + b.axles[1]) / 2);
+      design.add(skirt);
+      if (aero) {
+        const can = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.012, 0.08), kitMat);
+        can.position.set(sd * (prof.hwMax - 0.06), 0.36, skinZ(prof, sd * (prof.hwMax - 0.1), 0.36, 1) + 0.02);
+        can.rotation.z = sd * 0.25;
+        (parts.bumperF ? parts.bumperF.group : design).add(can);
+        if (parts.bumperF) can.position.sub(parts.bumperF.pivot);
+      }
+    }
+    const rz = skinZ(prof, 0, 0.2, -1);
+    const diff = new THREE.Group();
+    for (let k = -2; k <= 2; k++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.09, aero ? 0.3 : 0.18), kitMat);
+      fin.position.set(k * 0.18, 0.15, rz + 0.06);
+      diff.add(fin);
+    }
+    (parts.bumperR ? parts.bumperR.group : design).add(diff);
+    if (parts.bumperR) diff.position.sub(parts.bumperR.pivot);
+  }
+  // hood scoop rides on the hood (opens with it)
+  if (!npc && cfg.hoodScoop && parts.hood && Z.cowl < prof.zF - 0.5) {
+    const hz = (Z.cowl + prof.zF) / 2 - 0.05;
+    const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.55), parts.body.mesh.material);
+    scoop.position.set(0, f.top(hz) + 0.04, hz);
+    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.06), new THREE.MeshBasicMaterial({ color: 0x050505 }));
+    mouth.position.set(0, f.top(hz) + 0.045, hz + 0.28);
+    for (const o of [scoop, mouth]) {
+      o.position.sub(parts.hood.pivot);
+      parts.hood.group.add(o);
+    }
+  }
+  // fender flares over every arch
+  if (!npc && cfg.flares) {
+    const flMat = MATS.trim();
+    for (const az of b.axles)
+      for (const sd of [1, -1]) {
+        const fl = new THREE.Mesh(new THREE.TorusGeometry(prof.Ra + 0.02, 0.035, 6, 18, Math.PI), flMat);
+        fl.rotation.y = Math.PI / 2;
+        fl.position.set(sd * (f.hw(az) + 0.02), b.R, az);
+        design.add(fl);
+      }
   }
   // spoiler
   if (cfg.spoiler !== 'none' && !Z.bed && cfg.body !== 'van') {

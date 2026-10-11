@@ -29,14 +29,22 @@ export const PART_PRICES = {
   'weight:1': 3000, 'weight:2': 7000,
   underglow: 800,
   'gearbox:manual': 600, 'gearbox:auto': 600,
+  finaldrive: 1200, gearset: 3500, lsdtune: 400, boostctl: 900, alignment: 150,
+  'bodykit:sport': 2200, 'bodykit:aero': 4800, hoodscoop: 700, flares: 1500, rollcage: 3200,
+  'swheel:sport': 600, 'swheel:classic': 500, 'seats:bucket': 1400, 'gauges:digital': 900,
+  spacers: 300, 'tirewidth:wide': 400, 'tirewidth:narrow': 200, 'tip:dual': 250, 'tip:quad': 450, 'tip:square': 300,
+  'glowmode:pulse': 300, 'glowmode:rainbow': 450, calipers: 200, smokedtails: 250,
 };
 // level needed to buy a part (keeps big upgrades for later)
-export const PART_LEVEL = { 'turbo:big': 5, 'tune:2': 4, 'tune:3': 8, 'tire:slick': 5, 'engine:v8': 4, 'engine:ev': 9, 'engine:i6': 3, 'weight:2': 6, antilag: 3, 'spoiler:gt': 4, 'drivetrain:awd': 5 };
+export const PART_LEVEL = { 'bodykit:aero': 5, gearset: 4, rollcage: 3, boostctl: 3, 'turbo:big': 5, 'tune:2': 4, 'tune:3': 8, 'tire:slick': 5, 'engine:v8': 4, 'engine:ev': 9, 'engine:i6': 3, 'weight:2': 6, antilag: 3, 'spoiler:gt': 4, 'drivetrain:awd': 5 };
 
 export const PART_NAMES = {
   engine: 'Engine swap', turbo: 'Turbo', tune: 'ECU tune', tire: 'Tyres', drivetrain: 'Drivetrain conversion', diff: 'Differential', exhaust: 'Exhaust',
   antilag: 'Anti-lag', spoiler: 'Spoiler', coilovers: 'Adjustable coilovers', brakes: 'Big brake kit', weight: 'Weight reduction', underglow: 'Underglow',
   wheels: 'Rims', wheelsize: 'Rim size', headlights: 'Headlight bulbs', horn: 'Horn', gearbox: 'Gearbox swap',
+  finaldrive: 'Final drive', gearset: 'Custom gear set', lsdtune: 'LSD preload tuning', boostctl: 'Boost controller', alignment: 'Wheel alignment',
+  bodykit: 'Body kit', hoodscoop: 'Hood scoop', flares: 'Fender flares', rollcage: 'Roll cage', swheel: 'Steering wheel', seats: 'Seats', gauges: 'Gauges',
+  spacers: 'Wheel spacers', tirewidth: 'Tyre width', tip: 'Exhaust tips', glowmode: 'Underglow controller', calipers: 'Caliper paint', smokedtails: 'Smoked tail lights',
 };
 
 export const FUEL_PRICE = 1.7; // $ per litre
@@ -60,7 +68,25 @@ export function partsOf(cfg) {
   if (cfg.antilag) p.push('antilag');
   if (cfg.spoiler !== 'none') p.push(`spoiler:${cfg.spoiler}`);
   if (cfg.rideHeight !== s.rideHeight || cfg.springs !== s.springs || cfg.dampers !== s.dampers || cfg.antiRoll !== s.antiRoll) p.push('coilovers');
-  if (Math.abs(cfg.brakeBias - s.brakeBias) > 0.001) p.push('brakes');
+  if (cfg.brakeKit) p.push('brakes');
+  if ((cfg.finalMul ?? 1) !== 1) p.push('finaldrive');
+  if ((cfg.gearSpacing ?? 1) !== 1) p.push('gearset');
+  if ((cfg.lsdPreload ?? 0.5) !== 0.5) p.push('lsdtune');
+  if ((cfg.boost ?? 1) !== 1 && cfg.turbo !== 'none') p.push('boostctl');
+  if ((cfg.camber ?? -1) !== -1 || (cfg.toe ?? 0) !== 0) p.push('alignment');
+  if (cfg.bodyKit && cfg.bodyKit !== 'stock') p.push(`bodykit:${cfg.bodyKit}`);
+  if (cfg.hoodScoop) p.push('hoodscoop');
+  if (cfg.flares) p.push('flares');
+  if (cfg.rollCage) p.push('rollcage');
+  if (cfg.wheelStyleInterior && cfg.wheelStyleInterior !== 'stock') p.push(`swheel:${cfg.wheelStyleInterior}`);
+  if (cfg.seats === 'bucket') p.push('seats:bucket');
+  if (cfg.gauges === 'digital') p.push('gauges:digital');
+  if (cfg.wheelOffset) p.push('spacers');
+  if (cfg.tireWidth) p.push(`tirewidth:${cfg.tireWidth > 0 ? 'wide' : 'narrow'}`);
+  if (cfg.exhaustTip && cfg.exhaustTip !== 'round') p.push(`tip:${cfg.exhaustTip}`);
+  if (cfg.underglow && cfg.underglow !== 'none' && cfg.underglowMode && cfg.underglowMode !== 'steady') p.push(`glowmode:${cfg.underglowMode}`);
+  if (cfg.caliperColor && cfg.caliperColor !== '#c0392b') p.push('calipers');
+  if (cfg.smokedTails) p.push('smokedtails');
   if (cfg.weightReduction > 0) for (let i = 1; i <= cfg.weightReduction; i++) p.push(`weight:${i}`);
   if (cfg.underglow && cfg.underglow !== 'none') p.push('underglow');
   if (cfg.wheelStyle !== s.wheelStyle) p.push(`wheels:${cfg.wheelStyle}`);
@@ -93,14 +119,19 @@ export function paintJobPrice(from, to) {
   if (from.tint !== to.tint) cost += 150;
   if (from.plate !== to.plate) cost += 60;
   if (from.wheelColor !== to.wheelColor) cost += 250;
+  if ((from.twoTone || 'none') !== (to.twoTone || 'none')) cost += to.twoTone === 'none' ? 300 : 600;
+  if ((from.raceNumber || '') !== (to.raceNumber || '')) cost += to.raceNumber ? 120 : 40;
+  if ((from.interiorColor || '') !== (to.interiorColor || '')) cost += 500;
   return cost;
 }
 
 /** What the garage charges to go from one config to another, given parts already owned. */
 export function upgradeCost(from, to, owned = []) {
   const items = [];
+  // never bill for what the car already has fitted or what you own
+  const have = new Set([...owned, ...partsOf(from)]);
   for (const key of partsOf(to)) {
-    if (owned.includes(key)) continue;
+    if (have.has(key)) continue;
     const [k] = key.split(':');
     items.push({ key, name: `${PART_NAMES[k] || k}${key.includes(':') ? ' · ' + key.split(':')[1] : ''}`, price: partPrice(key), level: partLevel(key) });
   }

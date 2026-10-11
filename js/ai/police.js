@@ -21,6 +21,12 @@ const OFFENSES = {
   carjack: { heat: 2, fine: 2000, text: 'Grand theft auto' },
   evading: { heat: 1, fine: 800, text: 'Evading police' },
   pedestrian: { heat: 2, fine: 2500, text: 'Running over a pedestrian' },
+  phone: { heat: 1, fine: 300, text: 'Using a phone while driving' },
+  seatbelt: { heat: 1, fine: 120, text: 'Driving without a seatbelt' },
+  nolights: { heat: 1, fine: 150, text: 'Driving at night without headlights' },
+  stopsign: { heat: 1, fine: 200, text: 'Running a stop sign' },
+  wrongway: { heat: 1, fine: 350, text: 'Driving on the wrong side of the road' },
+  suspended: { heat: 1, fine: 800, text: 'Driving with a suspended licence' },
 };
 
 function copConfig(heavy) {
@@ -261,7 +267,7 @@ export class PoliceManager {
     if ((this.offenseCd[type] || 0) > 0) return;
     const cop = force ? this.cops[0] || true : this.seeingCop();
     if (!cop) return;
-    this.offenseCd[type] = type === 'speeding' ? 12 : 6;
+    this.offenseCd[type] = { speeding: 12, seatbelt: 45, nolights: 40, phone: 30, suspended: 30 }[type] || 6;
     const o = OFFENSES[type];
     this.offenses.push(type);
     const before = this.heat;
@@ -375,10 +381,14 @@ export class PoliceManager {
       const any = g.city.nearestLane(p);
       if (any && car.speed > 6 && g.city.onRoad(p.x, p.z)) {
         this.wrongWay = (this.wrongWay || 0) + dt;
-        if (this.wrongWay > 3) this.offense('reckless');
+        if (this.wrongWay > 3) this.offense('wrongway');
       } else this.wrongWay = 0;
       this.lastSeg = null;
     }
+    // equipment & licence offences (only if a cop sees you)
+    if (car.speed > 8 && !car.sys.seatbelt) this.offense('seatbelt');
+    if (car.speed > 5 && g.env.night > 0.6 && car.sys.lightLevel < 2) this.offense('nolights');
+    if (car.speed > 3 && g.career && g.career.suspended) this.offense('suspended');
   }
 
   updatePursuit(dt, t) {
@@ -439,10 +449,19 @@ export class PoliceManager {
     const evadeNeed = 8 + lvl * 3;
     this.evadeProgress = this.evade / evadeNeed;
     if (this.evade > evadeNeed) {
+      const lvlEsc = Math.floor(this.heat);
       this.heat = 0;
       this.evade = 0;
-      g.hud.big('ESCAPED', 'You lost the cops', 2.5);
       g.stats.escapes = (g.stats.escapes || 0) + 1;
+      if (g.career) {
+        // street cred: escaping pays (more stars, more cash)
+        const bonus = 150 * lvlEsc * lvlEsc;
+        g.career.earn(bonus, `Escaped a ${lvlEsc}★ pursuit`, 60 * lvlEsc);
+        g.career.p.stats.escapes++;
+        if (lvlEsc >= 3) g.career.unlock('ghost');
+        g.hud.big('ESCAPED', `You lost the cops · +$${bonus}`, 2.8);
+      } else g.hud.big('ESCAPED', 'You lost the cops', 2.5);
+      g.onPursuitEnd?.('escaped', lvlEsc);
       for (const c of this.cops) if (c.mode !== 'patrol') {
         c.mode = 'patrol';
         c.rejoin();
@@ -466,9 +485,11 @@ export class PoliceManager {
 
   ticket(cop) {
     const g = this.game;
-    const o = OFFENSES[this.offenses[this.offenses.length - 1] || 'speeding'];
+    const key = this.offenses[this.offenses.length - 1] || 'speeding';
+    const o = OFFENSES[key];
     const fine = o.fine;
     g.stats.fines += fine;
+    g.career?.fine?.(fine, key);
     g.hud.big('TICKET', `${o.text} — $${fine} fine. Drive safe.`, 3.5);
     cop.say('Have a nice day. Slow down.', 'cop');
     this.heat = 0;
@@ -487,6 +508,10 @@ export class PoliceManager {
     const g = this.game;
     const fine = 500 + Math.floor(this.heat) * 750;
     g.stats.fines += fine;
+    if (g.career) {
+      g.career.fine(fine, this.offenses[this.offenses.length - 1] || 'evading');
+      g.career.onBusted(fine);
+    }
     this.heat = 0;
     this.busted = 0;
     this.bustProgress = 0;
@@ -504,7 +529,7 @@ export class PoliceManager {
       const loc = g.city.locations.police;
       if (g.player.mode === 'foot') g.onFoot?.forceEnter?.();
       const car = g.player.car;
-      car.repair();
+      if (!g.career) car.repair(); // the impound doesn't fix your car in Career
       const p = loc.pos;
       car.placeAt(p.x, 0, p.z, loc.yaw);
       car.stopEngine();

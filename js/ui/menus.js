@@ -4,22 +4,45 @@ import { Car } from '../vehicle/car.js';
 import { configForBody, DEFAULT_CONFIG, BODIES } from '../vehicle/specs.js';
 import { randomPlate } from '../ai/traffic.js';
 import { WEATHERS } from '../world/environment.js';
+import { listSlots, deleteProfile, levelProgress } from '../career/profile.js';
+import { ACHIEVEMENTS } from '../career/achievements.js';
+import { fmtMoney } from '../career/economy.js';
+import { BINDINGS, REBINDABLE, rebind, resetBindings, keyLabel } from '../input.js';
 
 const root = () => document.getElementById('menu-root');
+
+export const TIPS = [
+  'Tip: in the cockpit, click the key twice for the bulb check, a third time to crank.',
+  'Tip: wear your seatbelt. Unbelted drivers can go through the windshield.',
+  'Tip: cold tyres have less grip. Slicks need heat to work.',
+  'Tip: leave the lights on with the engine off and the battery will go flat. Jump-start from another car.',
+  'Tip: driving into the sea hydrolocks the engine. Cars float for a while before they sink.',
+  'Tip: hard braking down the canyon cooks the brakes. Watch for fade.',
+  'Tip: oil leaks leave slippery puddles behind you.',
+  'Tip: a dirty car can be washed at the car wash on Harbor Ave.',
+  'Tip: escaping the police in Career pays out. Getting busted costs an impound fee.',
+  'Tip: hold B with the window open to lean out and look back.',
+  'Tip: cruise control (O) and the speed limiter (U) keep you clear of speed cameras.',
+  'Tip: EVs start with the brake held. Regen level is on /.',
+];
 
 const CONTROLS = [
   ['Driving', [
     ['Throttle / brake / reverse', 'W / S  or  ↑ / ↓'], ['Steer', 'A / D  or  ← / →'], ['Handbrake', 'Space'],
     ['Shift up / down (manual)', 'X or Shift / Z'], ['Toggle auto / manual gearbox', 'T'], ['Start / stop engine', 'I'],
     ['Horn', 'H'], ['Headlights (off / parking / on)', 'L'], ['High beams', 'K'], ['Indicators', 'Q / E'], ['Hazards', 'J'], ['Wipers', 'V'],
-    ['Look back', 'B'], ['Reset / flip car (hold)', 'R'], ['Repair (sandbox)', 'Backspace'], ['Police siren (cop cars)', 'G'],
+    ['Look back (lean out with the window open)', 'B'], ['Look left / right', '[ / ]'], ['Reset / flip car (hold)', 'R'], ['Repair (Free Roam)', 'Backspace'], ['Police siren (cop cars)', 'G'],
+    ['Clutch (realistic clutch setting)', 'L-Ctrl'], ['Pick a gear (manual)', '1-7, ` reverse, 0 neutral'], ['Flash to pass', 'Y'], ['Fog lights', '.'],
+    ['Cruise control set / cancel', 'O'], ['Cruise / limiter speed', '= / -'], ['Speed limiter', 'U'], ['Drive mode Eco / Normal / Sport', ','], ['EV regen level', '/'],
+    ['Seat height / position', 'PgUp PgDn / Home End'],
   ]],
   ['Camera & world', [
     ['Cycle camera', 'C'], ['Cockpit: look around', 'Mouse (click to grab)'], ['Cockpit: use a control', 'Left click'], ['Cockpit: zoom', 'Hold middle mouse'],
     ['Chase cam orbit / zoom', 'Drag mouse / wheel'], ['Photo mode', 'F2'], ['Slow motion', '\\'], ['Map & GPS waypoint', 'M'], ['Next radio station', 'N'],
-    ['Get out / get in a car', 'F'], ['Garage / refuel (in zone)', 'Enter'], ['Telemetry', 'F3'], ['Sandbox menu', 'Esc'],
+    ['Get out / get in a car', 'F'], ['Garage / refuel (in zone)', 'Enter'], ['Telemetry', 'F3'], ['Pause menu', 'Esc'],
+    ['Phone', 'Tab'], ['Replay', 'F5'], ['Hide HUD', 'F6'], ['Restart event', 'F4'], ['Cockpit FOV', 'Mouse wheel (cockpit)'],
   ]],
-  ['On foot', [['Walk / run', 'WASD / Shift'], ['Jump', 'Space'], ['Enter nearest car', 'F']]],
+  ['On foot', [['Walk / run', 'WASD / Shift'], ['Jump', 'Space'], ['Enter nearest car', 'F'], ['Extinguisher / jump start / interact', 'E'], ['Key fob: lock / unlock', 'K']]],
   ['Gamepad', [['Throttle / brake', 'RT / LT'], ['Steer', 'Left stick'], ['Look', 'Right stick'], ['Handbrake', 'A'], ['Gears', 'LB / RB'], ['Camera', 'Y'], ['Horn', 'X'], ['Lights / wipers / indicators', 'D-pad']]],
 ];
 
@@ -65,19 +88,24 @@ export class Menus {
     g.hud.show(false);
     g.input.unlock();
     this.clear();
+    const slots = listSlots();
+    const last = slots.filter((x) => !x.empty).sort((p, q) => (q.playtime || 0) - (p.playtime || 0))[0];
     const m = this.el(`
       <div class="menu main">
         <div class="side">
           <div class="title">SAN<span>.</span>DEMO</div>
-          <div class="subtitle">DRIVING SANDBOX · TECH DEMO</div>
-          <button class="btn primary" data-a="drive">▶  Drive</button>
-          <button class="btn" data-a="garage">🔧  Garage & customization</button>
+          <div class="subtitle">DRIVING SANDBOX · CAREER · TECH DEMO</div>
+          ${last ? `<button class="btn primary" data-a="continue">▶  Continue career <span style="float:right;font-size:13px;opacity:0.8">Slot ${last.slot} · LV ${last.level} · ${fmtMoney(last.money)}</span></button>` : ''}
+          <button class="btn ${last ? '' : 'primary'}" data-a="career">🏁  Career</button>
+          <button class="btn" data-a="free">🌆  Free Roam sandbox</button>
+          <button class="btn" data-a="garage">🔧  Free Roam garage</button>
           <button class="btn" data-a="settings">⚙  Settings</button>
-          <button class="btn" data-a="controls">🎮  Controls</button>
-          <button class="btn" data-a="about">ℹ  About this demo</button>
+          <button class="btn" data-a="keys">🎮  Controls &amp; key bindings</button>
+          <button class="btn" data-a="about">ℹ  About &amp; credits</button>
           <div class="foot">
-            Soft-body damage · raycast tyre physics · living traffic with road rage · police pursuits · interactive cockpit.<br>
-            Tip: start in the cockpit and click the key to start the engine. Headphones recommended.
+            <b>Career</b>: start with a tired hatchback and $1,500. Earn money from jobs, races and stunts, buy cars and parts, and pay for fuel, repairs and fines.<br>
+            <b>Free Roam</b>: everything unlocked, free repairs, the sandbox menu.<br>
+            <span class="tip">${TIPS[Math.floor(Math.random() * TIPS.length)]}</span>
           </div>
         </div>
       </div>`);
@@ -86,31 +114,110 @@ export class Menus {
       if (!a) return;
       g.audio?.resume?.();
       g.audio?.click?.();
-      if (a === 'drive') {
+      if (a === 'continue') {
         this.clear();
-        g.startDriving();
+        g.startCareer(last.slot, false);
+      } else if (a === 'career') this.openCareerSlots();
+      else if (a === 'free') {
+        this.clear();
+        g.startFreeRoam();
       } else if (a === 'garage') {
         this.clear();
+        g.career = null;
+        g.mode = 'free';
         g.garage?.open('menu');
       } else if (a === 'settings') this.openSettings(() => this.openMain());
-      else if (a === 'controls') this.toggleHelp(true);
+      else if (a === 'keys') this.openKeys(() => this.openMain());
       else if (a === 'about') this.openAbout();
     });
     root().appendChild(m);
+  }
+
+  /** Career save slots: continue, start new (with an in-page confirm when overwriting), delete. */
+  openCareerSlots(confirm = null) {
+    const g = this.game;
+    this.clear();
+    const slots = listSlots();
+    const fmtTime = (s) => `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
+    const p = this.el(`<div class="menu" style="background:rgba(4,6,8,0.72)"><div class="panel">
+      <h2>Career</h2>
+      <div class="slots">${slots.map((sl) => `
+        <div class="slot ${sl.empty ? 'empty' : ''}">
+          <div class="h">Slot ${sl.slot}</div>
+          ${sl.empty ? '<div class="i">Empty</div>' : `<div class="i">Level ${sl.level} · ${fmtMoney(sl.money)} · ${sl.cars} car${sl.cars === 1 ? '' : 's'}<br>Day ${sl.day} · played ${fmtTime(sl.playtime)}</div>`}
+          ${confirm && confirm.slot === sl.slot ? `<div class="confirm">${confirm.kind === 'delete' ? 'Delete this save for good?' : 'Overwrite this save with a new career?'}
+              <button class="btn small primary" data-c="${confirm.kind}" data-slot="${sl.slot}">Yes</button><button class="btn small" data-c="cancel">No</button></div>` : `
+          <div class="b">
+            ${sl.empty ? `<button class="btn small primary" data-new="${sl.slot}">New career</button>` : `<button class="btn small primary" data-load="${sl.slot}">Continue</button><button class="btn small" data-new="${sl.slot}">New</button><button class="btn small" data-del="${sl.slot}">Delete</button>`}
+          </div>`}
+        </div>`).join('')}</div>
+      <button class="btn small" data-a="back">Back</button></div></div>`);
+    p.querySelector('[data-a=back]').onclick = () => this.openMain();
+    p.querySelectorAll('[data-load]').forEach((b) => (b.onclick = () => {
+      this.clear();
+      g.startCareer(+b.dataset.load, false);
+    }));
+    p.querySelectorAll('[data-new]').forEach((b) => (b.onclick = () => {
+      const slot = +b.dataset.new;
+      if (!slots.find((x) => x.slot === slot).empty) return this.openCareerSlots({ slot, kind: 'new' });
+      this.clear();
+      g.startCareer(slot, true);
+    }));
+    p.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => this.openCareerSlots({ slot: +b.dataset.del, kind: 'delete' })));
+    p.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => {
+      const k = b.dataset.c;
+      if (k === 'cancel') return this.openCareerSlots();
+      const slot = +b.dataset.slot;
+      if (k === 'delete') {
+        deleteProfile(slot);
+        return this.openCareerSlots();
+      }
+      this.clear();
+      g.startCareer(slot, true);
+    }));
+    root().appendChild(p);
+  }
+
+  /** Key rebinding (click an action, then press a key). */
+  openKeys(back) {
+    const g = this.game;
+    this.clear();
+    const p = this.el(`<div class="menu" style="background:rgba(4,6,8,0.72)"><div class="panel">
+      <h2>Controls &amp; key bindings</h2>
+      <p style="color:#9aa3ad;margin-top:-6px">Click a binding, then press the new key. Esc cancels.</p>
+      <div class="keys">${Object.entries(REBINDABLE).map(([k, label]) => `<div class="krow"><span>${label}</span><button class="btn small" data-key="${k}">${(BINDINGS[k] || []).map(keyLabel).join(' / ')}</button></div>`).join('')}</div>
+      <div style="margin-top:14px"><button class="btn small" data-a="reset">Reset to defaults</button><button class="btn small" data-a="cheat">Full controls list</button><button class="btn small primary" data-a="back">Done</button></div></div></div>`);
+    p.querySelectorAll('[data-key]').forEach((b) => (b.onclick = () => {
+      b.textContent = 'press a key…';
+      b.classList.add('primary');
+      g.input.captureNext = (code) => {
+        if (code !== 'Escape') rebind(b.dataset.key, code);
+        this.openKeys(back);
+      };
+    }));
+    p.querySelector('[data-a=reset]').onclick = () => {
+      resetBindings();
+      this.openKeys(back);
+    };
+    p.querySelector('[data-a=cheat]').onclick = () => this.toggleHelp(true);
+    p.querySelector('[data-a=back]').onclick = () => back();
+    root().appendChild(p);
   }
 
   openAbout() {
     this.clear();
     const p = this.el(`<div class="menu" style="background:rgba(4,6,8,0.7)"><div class="panel">
       <h2>About SAN DEMO</h2>
-      <p style="line-height:1.6;color:#cfd5dc">A driving sandbox built from scratch in the browser with three.js. Nothing is pre-made: the cars, the city, the textures and every sound are generated in code.</p>
+      <p style="line-height:1.6;color:#cfd5dc">A driving sandbox built from scratch in the browser with three.js. Nothing is pre-made: the cars, the city, the hills, the textures and every sound are generated in code.</p>
       <ul style="line-height:1.7;color:#cfd5dc">
-        <li><b>Vehicle physics</b>: a rigid-body chassis on four raycast spring/damper corners with anti-roll bars, a combined-slip tyre model, and an engine → clutch → gearbox → differential powertrain (open / limited-slip / locked, FWD / RWD / AWD, turbo lag, EV).</li>
-        <li><b>Soft-body damage</b>: a node-and-beam lattice with plastic yield deforms the body mesh, collision hull and suspension mounts. Panels come loose and fall off, glass cracks and shatters, wheels bend or break off, and engines and radiators fail.</li>
-        <li><b>City</b>: 36 blocks with timed traffic lights, breakable street furniture, a park, gas station, customs shop, police HQ and a proving grounds with jumps, a skid pad, a crash wall and a drag strip.</li>
-        <li><b>AI</b>: lane-following drivers that keep their distance, obey signals, yield, honk, and sometimes lose their temper. Police issue tickets or chase you, with pursuit levels up to roadblocks and spike strips.</li>
-        <li><b>Audio</b>: synthesized engines per cylinder layout, turbo and backfires, tyre squeal, crashes, positional horns and sirens, and a radio with four generated stations.</li>
+        <li><b>Vehicle physics</b>: a rigid-body chassis on four raycast spring/damper corners, a combined-slip tyre model with temperature, wear and pressure, and an engine → clutch → gearbox → differential powertrain with a real clutch pedal, turbo lag, launch control and an EV mode.</li>
+        <li><b>Soft-body damage</b>: a node-and-beam lattice with plastic yield. Panels fall off, glass shatters, wheels break, engines seize, fluids leak, fires start and fuel tanks explode.</li>
+        <li><b>World</b>: a city with traffic lights and pedestrians, a mountain canyon road, a coast highway, a port with a freighter and cranes, a beach, a pier and the sea.</li>
+        <li><b>AI</b>: traffic that obeys signals and loses its temper, police who ticket or chase you, pedestrians who dodge, race rivals, derby drivers and fleeing suspects.</li>
+        <li><b>Career</b>: money, XP, a dealership, priced parts, insurance, loans, licence points, jobs, races and achievements.</li>
       </ul>
+      <h3 style="margin:18px 0 6px">Credits</h3>
+      <p style="line-height:1.6;color:#9aa3ad">Design, code, physics, procedural art and audio: generated for this demo with Claude.<br>Rendering: <b>three.js r160</b> (MIT licence). Fonts: system fonts. No third-party models, textures or sounds are used.<br>Thanks for playing — wear your seatbelt.</p>
       <button class="btn small" data-a="back">Back</button></div></div>`);
     p.querySelector('[data-a=back]').onclick = () => this.openMain();
     root().appendChild(p);
@@ -128,30 +235,77 @@ export class Menus {
   renderPause(tab) {
     const g = this.game;
     this.clear();
-    const tabs = [['world', 'World'], ['sandbox', 'Sandbox'], ['car', 'Car'], ['settings', 'Settings'], ['stats', 'Stats']];
+    const career = !!g.career;
+    const tabs = career ? [['career', 'Career'], ['car', 'Car'], ['settings', 'Settings'], ['stats', 'Stats']] : [['world', 'World'], ['sandbox', 'Sandbox'], ['car', 'Car'], ['settings', 'Settings'], ['stats', 'Stats']];
+    if (career && (tab === 'world' || tab === 'sandbox')) tab = 'career';
+    const act = g.activities?.current;
     const p = this.el(`<div class="menu" style="background:rgba(4,6,8,0.55)"><div class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center"><h2>Paused</h2>
-      <div><button class="btn small primary" data-a="resume">Resume (Esc)</button><button class="btn small" data-a="garage">Garage</button><button class="btn small" data-a="controls">Controls</button><button class="btn small" data-a="menu">Main menu</button></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2>Paused${career ? ' · Career' : ' · Free Roam'}</h2>
+      <div><button class="btn small primary" data-a="resume">Resume (Esc)</button>${act ? '<button class="btn small" data-a="restart">Restart event</button><button class="btn small" data-a="quitev">Quit event</button>' : ''}${career ? '' : '<button class="btn small" data-a="garage">Garage</button>'}<button class="btn small" data-a="controls">Controls</button><button class="btn small" data-a="menu">${career ? 'Save &amp; quit' : 'Main menu'}</button></div></div>
       <div class="tabs">${tabs.map(([k, n]) => `<div class="tab ${k === tab ? 'active' : ''}" data-tab="${k}">${n}</div>`).join('')}</div>
       <div class="content"></div></div></div>`);
     p.querySelectorAll('[data-tab]').forEach((t) => (t.onclick = () => this.renderPause(t.dataset.tab)));
     p.querySelector('[data-a=resume]').onclick = () => this.closeAll();
-    p.querySelector('[data-a=garage]').onclick = () => {
+    const gb = p.querySelector('[data-a=garage]');
+    if (gb) gb.onclick = () => {
       this.clear();
       g.garage?.open('pause');
     };
-    p.querySelector('[data-a=controls]').onclick = () => this.toggleHelp(true);
+    const rb = p.querySelector('[data-a=restart]');
+    if (rb) rb.onclick = () => {
+      this.closeAll();
+      g.activities.restart();
+    };
+    const qb = p.querySelector('[data-a=quitev]');
+    if (qb) qb.onclick = () => {
+      this.closeAll();
+      g.activities.abort(true);
+    };
+    p.querySelector('[data-a=controls]').onclick = () => this.openKeys(() => this.renderPause(tab));
     p.querySelector('[data-a=menu]').onclick = () => {
       g.hud.show(false);
-      this.openMain();
+      g.quitToMenu();
     };
     const c = p.querySelector('.content');
+    if (tab === 'career') this.careerTab(c);
     if (tab === 'world') this.worldTab(c);
     if (tab === 'sandbox') this.sandboxTab(c);
     if (tab === 'car') this.carTab(c);
     if (tab === 'settings') this.settingsRows(c);
     if (tab === 'stats') this.statsTab(c);
     root().appendChild(p);
+  }
+
+  careerTab(c) {
+    const g = this.game;
+    const ca = g.career;
+    const p = ca.p;
+    const pr = levelProgress(p.xp);
+    const unlocked = ACHIEVEMENTS.filter((a) => p.achievements[a.id]).length;
+    const medals = Object.values(p.events);
+    const m = (n) => medals.filter((e) => e.medal === n).length;
+    c.innerHTML = `
+      <div class="cgrid">
+        <div class="ccard"><div class="l">Level</div><div class="v">${pr.level}</div><div class="s">${pr.into} / ${pr.need} XP</div></div>
+        <div class="ccard"><div class="l">Money</div><div class="v">${fmtMoney(p.money)}</div><div class="s">${ca.debt ? 'Debt ' + fmtMoney(ca.debt) : 'No debt'}</div></div>
+        <div class="ccard"><div class="l">Licence</div><div class="v">${p.licence.points}/12</div><div class="s">${ca.suspended ? '<b style="color:#ff7070">SUSPENDED</b>' : 'points'}</div></div>
+        <div class="ccard"><div class="l">Medals</div><div class="v">🥇${m(3)} 🥈${m(2)} 🥉${m(1)}</div><div class="s">${Object.keys(p.events).length} events tried</div></div>
+        <div class="ccard"><div class="l">Day</div><div class="v">${p.day}</div><div class="s">${Math.floor(p.playtime / 60)} min played</div></div>
+        <div class="ccard"><div class="l">Garage</div><div class="v">${p.garage.length}</div><div class="s">car${p.garage.length === 1 ? '' : 's'} owned</div></div>
+      </div>
+      ${this.row('Insurance', `<span style="color:#9aa3ad">${fmtMoney(ca.premium())}/day · pays 60% of repairs over $250</span> <button class="btn small ${p.insurance.active ? 'primary' : ''}" data-a="ins">${p.insurance.active ? 'Insured ✔' : 'Buy cover'}</button>`)}
+      ${this.row('Bank loan', `<span style="color:#9aa3ad">Up to ${fmtMoney(ca.loanLimit())} · 12% fee · repaid over 5 days</span> <button class="btn small" data-a="loan">Borrow $5,000</button>`)}
+      <h3 style="margin:16px 0 8px">Achievements · ${unlocked}/${ACHIEVEMENTS.length}</h3>
+      <div class="achs">${ACHIEVEMENTS.map((a) => `<div class="ach ${p.achievements[a.id] ? 'on' : ''}"><b>${p.achievements[a.id] ? '🏆' : '🔒'} ${a.name}</b><span>${a.desc}</span></div>`).join('')}</div>`;
+    c.querySelector('[data-a=ins]').onclick = () => {
+      ca.setInsurance(!p.insurance.active);
+      this.renderPause('career');
+    };
+    c.querySelector('[data-a=loan]').onclick = () => {
+      const got = ca.borrow(5000);
+      g.toast(got ? `Borrowed ${fmtMoney(got)}` : 'Loan limit reached', got ? 'good' : 'warn');
+      this.renderPause('career');
+    };
   }
 
   row(label, ctl) {

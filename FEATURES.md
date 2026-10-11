@@ -54,7 +54,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F049 Dome light comes on automatically when the door opens
 - [x] F050 Sun glare when facing a low sun; the sun visor blocks it
 - [ ] F051 Glovebox registration used in police traffic stops
-- [ ] F052 Phone mount on the dashboard showing the phone screen
+- [x] F052 Phone mount on the dashboard showing the phone screen
 - [x] F053 Steering self-centring and weight from tyre aligning torque
 - [x] F054 Gamepad rumble (slip, ABS, curbs, impacts)
 - [ ] F055 Steering wheel device support with rotation calibration
@@ -67,13 +67,13 @@ This is the checklist of features added in the v2 remake, on top of everything v
 ## B. Mechanical, physics and damage (61–100)
 - [x] F061 Tyre temperature affects grip
 - [x] F062 Tyre wear from distance and slip
-- [ ] F063 Tyre pressure setting (grip, rolling resistance, wear)
+- [x] F063 Tyre pressure setting (grip, rolling resistance, wear)
 - [x] F064 Brake fade from heat
-- [ ] F065 Big brake kit raises brake torque and fade resistance
-- [ ] F066 Camber affects grip
-- [ ] F067 Toe affects straight-line stability and turn-in
+- [x] F065 Big brake kit raises brake torque and fade resistance
+- [x] F066 Camber affects grip
+- [x] F067 Toe affects straight-line stability and turn-in
 - [x] F068 Distinct gear ratios per car
-- [ ] F069 Final-drive ratio tuning
+- [x] F069 Final-drive ratio tuning
 - [x] F070 Fuel tank size per car
 - [x] F071 Oil level and oil leaks from damage; low oil seizes the engine
 - [x] F072 Coolant leaks lead to overheating
@@ -107,68 +107,68 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F100 Tyre blowouts from overheating or wear
 
 ## C. Customization and garage (101–130)
-- [ ] F101 A garage that holds several cars
-- [ ] F102 Named setups saved per car
-- [ ] F103 Dyno graph (torque and power) in the garage
-- [ ] F104 Gear ratio tuning
-- [ ] F105 Tyre pressure tuning
-- [ ] F106 Camber and toe tuning
-- [ ] F107 LSD preload tuning
-- [ ] F108 Boost controller
-- [ ] F109 Front bumper styles (body kit)
-- [ ] F110 Hood scoop
-- [ ] F111 Fender flares / wide body
-- [ ] F112 Roll cage (stiffens the cabin structure)
-- [ ] F113 Steering wheel styles
-- [ ] F114 Bucket seats
-- [ ] F115 Gauge style: analog or digital
-- [ ] F116 Interior colour
-- [ ] F117 Racing number decals
-- [ ] F118 Two-tone paint
-- [ ] F119 Smoked tail lights
-- [ ] F120 Wheel offset / spacers
-- [ ] F121 Tyre width option
-- [ ] F122 Exhaust tip styles
-- [ ] F123 Underglow animation modes
-- [ ] F124 Brake caliper colour
-- [ ] F125 Dirt that builds up on the car; washing it off
+- [x] F101 A garage that holds several cars
+- [x] F102 Named setups saved per car
+- [x] F103 Dyno graph (torque and power) in the garage
+- [x] F104 Gear ratio tuning
+- [x] F105 Tyre pressure tuning
+- [x] F106 Camber and toe tuning
+- [x] F107 LSD preload tuning
+- [x] F108 Boost controller
+- [x] F109 Front bumper styles (body kit)
+- [x] F110 Hood scoop
+- [x] F111 Fender flares / wide body
+- [x] F112 Roll cage (stiffens the cabin structure)
+- [x] F113 Steering wheel styles
+- [x] F114 Bucket seats
+- [x] F115 Gauge style: analog or digital
+- [x] F116 Interior colour
+- [x] F117 Racing number decals
+- [x] F118 Two-tone paint
+- [x] F119 Smoked tail lights
+- [x] F120 Wheel offset / spacers
+- [x] F121 Tyre width option
+- [x] F122 Exhaust tip styles
+- [x] F123 Underglow animation modes
+- [x] F124 Brake caliper colour
+- [x] F125 Dirt that builds up on the car; washing it off
 - [ ] F126 Car wash in the city
-- [ ] F127 Live price preview in the paint shop
-- [ ] F128 Sell cars at the dealership
-- [ ] F129 Test drives at the dealership
-- [ ] F130 Mileage and condition shown in the garage
+- [x] F127 Live price preview in the paint shop
+- [x] F128 Sell cars at the dealership
+- [x] F129 Test drives at the dealership
+- [x] F130 Mileage and condition shown in the garage
 
 ## D. Career and economy (131–160)
-- [ ] F131 Career mode with autosave
-- [ ] F132 Free Roam sandbox mode
-- [ ] F133 Money, XP and levels
-- [ ] F134 Level-up rewards and unlocks
-- [ ] F135 San Demo Motors dealership
-- [ ] F136 Paid repairs, per system
-- [ ] F137 Paid fuel per litre
-- [ ] F138 Police fines charged
-- [ ] F139 Impound fee when busted (no free repair)
-- [ ] F140 Tow service
-- [ ] F141 Insurance (premium; pays part of repairs)
-- [ ] F142 Car depreciation with mileage
-- [ ] F143 Bank statement on the phone
-- [ ] F144 Car loans
-- [ ] F145 Achievements with toasts
-- [ ] F146 Career stats page
+- [x] F131 Career mode with autosave
+- [x] F132 Free Roam sandbox mode
+- [x] F133 Money, XP and levels
+- [x] F134 Level-up rewards and unlocks
+- [x] F135 San Demo Motors dealership
+- [x] F136 Paid repairs, per system
+- [x] F137 Paid fuel per litre
+- [x] F138 Police fines charged
+- [x] F139 Impound fee when busted (no free repair)
+- [x] F140 Tow service
+- [x] F141 Insurance (premium; pays part of repairs)
+- [x] F142 Car depreciation with mileage
+- [x] F143 Bank statement on the phone
+- [x] F144 Car loans
+- [x] F145 Achievements with toasts
+- [x] F146 Career stats page
 - [ ] F147 Bronze / silver / gold medals per event
 - [ ] F148 Local leaderboards per event
-- [ ] F149 Driving licence points; too many offences suspend it
-- [ ] F150 A suspended licence has consequences (higher heat, no jobs)
-- [ ] F151 Roadside mechanic call
-- [ ] F152 Oil service intervals
-- [ ] F153 Tyre shop: replace worn tyres
-- [ ] F154 Three career save slots
-- [ ] F155 v1 car and settings migrated into the career
-- [ ] F156 Autosave indicator
+- [x] F149 Driving licence points; too many offences suspend it
+- [x] F150 A suspended licence has consequences (higher heat, no jobs)
+- [x] F151 Roadside mechanic call
+- [x] F152 Oil service intervals
+- [x] F153 Tyre shop: replace worn tyres
+- [x] F154 Three career save slots
+- [x] F155 v1 car and settings migrated into the career
+- [x] F156 Autosave indicator
 - [ ] F157 Career intro tutorial
 - [ ] F158 Contextual hints
-- [ ] F159 Map points of interest with a legend
-- [ ] F160 Fast travel to the garage (taxi fee)
+- [x] F159 Map points of interest with a legend
+- [x] F160 Fast travel to the garage (taxi fee)
 
 ## E. Activities (161–200)
 - [ ] F161 Activity framework: markers, start card, countdown, objective panel, results
@@ -336,18 +336,18 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [ ] F315 Photo mode time-of-day slider
 
 ## J. UI, HUD, settings and sandbox (316–350)
-- [ ] F316 New main menu with Career and Free Roam
-- [ ] F317 Phone (Tab): map, jobs, contacts, bank, messages, settings
+- [x] F316 New main menu with Career and Free Roam
+- [x] F317 Phone (Tab): map, jobs, contacts, bank, messages, settings
 - [ ] F318 Text messages from contacts with job offers
-- [ ] F319 Key rebinding
+- [x] F319 Key rebinding
 - [ ] F320 Assist presets: Arcade, Realistic, Sim
 - [ ] F321 Mouse sensitivity and invert Y that actually work
-- [ ] F322 Distance units on the HUD and phone
+- [x] F322 Distance units on the HUD and phone
 - [ ] F323 Colour-blind-friendly HUD palette
 - [ ] F324 HUD scale
 - [ ] F325 Subtitles for radio and speech
 - [ ] F326 Big map with zoom and pan
-- [ ] F327 Map legend and filters
+- [x] F327 Map legend and filters
 - [ ] F328 GPS route to any point of interest
 - [ ] F329 Turn-by-turn arrow on the HUD
 - [ ] F330 Speed-limit sign on the HUD
@@ -364,7 +364,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [ ] F341 Tree density setting
 - [ ] F342 Reduce camera shake (accessibility)
 - [ ] F343 Toggle-or-hold control options (accessibility)
-- [ ] F344 About and credits screen
+- [x] F344 About and credits screen
 - [ ] F345 Sandbox: spawn AI with a chosen behaviour (racer, derby, flee, rage)
 - [ ] F346 Sandbox: save and load scenarios
 - [ ] F347 Sandbox: black-ice patches

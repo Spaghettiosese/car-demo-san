@@ -5,6 +5,7 @@ import { PhysicsSystem } from './physics/physicsSystem.js';
 import { City, CITY } from './world/city.js';
 import { Terrain } from './world/terrain.js';
 import { Coast } from './world/coast.js';
+import { Career } from './career/career.js';
 import { Props } from './world/props.js';
 import { Environment } from './world/environment.js';
 import { FX } from './fx/particles.js';
@@ -187,6 +188,10 @@ export class Game {
     if (this.traffic) this.traffic.init();
     const peds = await tryImport('./ai/pedestrians.js');
     if (peds) this.peds = new peds.Pedestrians(this);
+    const dealer = await tryImport('./ui/dealer.js');
+    if (dealer) this.dealer = new dealer.Dealer(this);
+    const phone = await tryImport('./ui/phone.js');
+    if (phone) this.phone = new phone.Phone(this);
   }
 
   /** A fixed pool of real lights (no shader recompiles): player headlights + police strobes. */
@@ -403,6 +408,16 @@ export class Game {
       this.toast(`Cruise resume: <b>${this.fmtSpeed(cr.speed)}</b>`);
     } else this.toast('Cruise control works above 30 km/h');
     this.audio?.click?.();
+  }
+
+  /** Fade to black, run fn, fade back in. */
+  fadeTo(fn, ms = 700) {
+    const fade = document.getElementById('fade');
+    fade.style.opacity = '1';
+    setTimeout(() => {
+      fn();
+      setTimeout(() => (fade.style.opacity = '0'), 150);
+    }, ms);
   }
 
   fmtSpeed(ms) {
@@ -636,6 +651,9 @@ export class Game {
     this.env.sky.position.copy(this.camera.position);
     if (this.player.mode === 'car') this.interior?.update(dt, input);
     this.carEvents(pc);
+    this.career?.update(dt);
+    this.phone?.update(dt);
+    this.dealer?.update(dt);
     this.audio?.update(dt);
     this.gpsUpdate(dt);
     this.zones(dt);
@@ -771,9 +789,12 @@ export class Game {
       this.toast(pt.auto ? 'Automatic gearbox' : 'Manual gearbox: <kbd>X</kbd>/<kbd>Shift</kbd> up, <kbd>Z</kbd> down');
     }
     if (input.pressed('repair')) {
-      car.repair();
-      this.toast('Car repaired', 'good');
-      this.audio?.repair?.();
+      if (this.career) this.toast('Repairs cost money in Career: visit San Demo Customs or call a mechanic on your phone (<kbd>Tab</kbd>)', 'warn', 4);
+      else {
+        car.repair();
+        this.toast('Car repaired', 'good');
+        this.audio?.repair?.();
+      }
     }
     // hold R to reset / flip
     if (input.down('reset')) {
@@ -963,6 +984,44 @@ export class Game {
   }
 
   // ------------------------------------------------------------ state changes
+  /** Career: spawn the current garage car and go. */
+  startCareer(slot, fresh) {
+    this.menus?.clear?.();
+    this.career = fresh ? Career.fresh(this, slot) : Career.load(this, slot) || Career.fresh(this, slot);
+    this.mode = 'career';
+    this.police?.clearAll?.();
+    if (this.police) this.police.heat = 0;
+    this.spawnCareerCar(this.career.car, this.city.locations.garage);
+    this.startDriving();
+    if (fresh) this.tutorial?.start?.();
+  }
+
+  spawnCareerCar(entry, where) {
+    const car = this.spawnPlayer(entry.cfg, where);
+    car.careerId = entry.id;
+    this.career.p.current = entry.id;
+    this.career.restoreCar(car, entry);
+    return car;
+  }
+
+  startFreeRoam() {
+    this.menus?.clear?.();
+    if (this.career) this.career.save();
+    this.career = null;
+    this.mode = 'free';
+    if (this.player.car) this.removeCar(this.player.car);
+    this.player.car = null;
+    this.spawnPlayer(this.carConfig);
+    this.startDriving();
+  }
+
+  /** Back to the main menu (saves the career). */
+  quitToMenu() {
+    if (this.career) this.career.save();
+    this.activities?.abort?.();
+    this.menus?.openMain();
+  }
+
   startDriving() {
     this.state = 'play';
     this.hud.show(true);
@@ -972,7 +1031,7 @@ export class Game {
       this.hud.camName('cockpit');
       setTimeout(() => {
         this.hud.toast('Welcome to <b>San Demo</b>. Click the key (or press <kbd>I</kbd>) to start the engine.', 'info', 7);
-        this.hud.toast('<kbd>C</kbd> cameras · <kbd>F1</kbd> controls · <kbd>Esc</kbd> sandbox menu', 'info', 7);
+        this.hud.toast(`<kbd>C</kbd> cameras · <kbd>F1</kbd> controls · <kbd>Tab</kbd> phone · <kbd>Esc</kbd> ${this.career ? 'pause' : 'sandbox menu'}`, 'info', 7);
       }, 600);
     }
     this.audio?.resume?.();
@@ -999,11 +1058,22 @@ export class Game {
     // customs shop
     const gz = city.garageZone;
     if (gz && p.x > gz.x0 && p.x < gz.x1 && p.z > gz.z0 && p.z < gz.z1 && car.speed < 1.5) {
-      prompt = '<kbd>Enter</kbd> San Demo Customs — repair & customize';
+      prompt = this.career ? '<kbd>Enter</kbd> San Demo Customs — repairs, service, parts & paint' : '<kbd>Enter</kbd> San Demo Customs — repair & customize';
       if (input.keyPressed('Enter')) {
-        car.repair();
-        car.phys.pt.fuel = 55;
+        if (!this.career) {
+          car.repair();
+          car.phys.pt.refill();
+        }
         this.garage?.open('shop');
+        return;
+      }
+    }
+    // San Demo Motors
+    const dz = this.dealer?.zone(car, input);
+    if (dz) {
+      prompt = dz;
+      if (input.keyPressed('Enter')) {
+        this.dealer.open();
         return;
       }
     }

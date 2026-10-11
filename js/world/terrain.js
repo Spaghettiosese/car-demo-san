@@ -19,11 +19,13 @@ const RES = 2;
 const NG = (HALF * 2) / RES + 1; // grid points per axis
 export const SEA_LEVEL = -1.4;
 export const HARBOR = { x0: -CITY_HALF, x1: 130, z0: CITY_HALF, z1: 520 };
+export const DEALER = { x0: 252, x1: 336, z0: 346, z1: 408 };
 
 const FLAT = [
   { x0: -CITY_HALF, x1: CITY_HALF, z0: -CITY_HALF, z1: CITY_HALF, mat: MATERIALS.asphalt },
   { x0: CITY_HALF - 1, x1: PG.x1, z0: PG.z0, z1: PG.z1, mat: MATERIALS.asphalt },
   { ...HARBOR, mat: MATERIALS.concrete },
+  { ...DEALER, mat: MATERIALS.concrete },
 ];
 
 /** Material codes stored in the grid. */
@@ -348,7 +350,7 @@ export class Terrain {
   /** Physics query. Fills out.y / normal / mat. */
   sample(x, z, out) {
     // paved flat zones: city, proving grounds, harbor
-    for (let k = 0; k < 3; k++) {
+    for (let k = 0; k < FLAT.length; k++) {
       const r = FLAT[k];
       if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) {
         out.y = 0; out.nx = 0; out.ny = 1; out.nz = 0; out.mat = r.mat;

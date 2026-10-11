@@ -275,7 +275,7 @@ export function buildTuning(cfg) {
   const WB = zF - zR;
   const R = body.R * (tire.offroad ? 1.04 : 1);
 
-  const mass = body.mass + (eng.mass - 160) - cfg.weightReduction * 120 + (cfg.spoiler === 'gt' ? 12 : 0);
+  const mass = body.mass + (eng.mass - 160) - cfg.weightReduction * 120 + (cfg.spoiler === 'gt' ? 12 : 0) + (cfg.rollCage ? 35 : 0) + (cfg.seats === 'bucket' ? -15 : 0);
   const frontWeight = body.frontWeight + (eng.mass - 160) / 4000 - (cfg.drivetrain === 'fwd' ? -0.02 : 0);
   const com = new THREE.Vector3(0, body.comY + cfg.rideHeight * 0.8, zR + frontWeight * WB);
   const inertia = new THREE.Vector3(
@@ -291,7 +291,7 @@ export function buildTuning(cfg) {
   for (const [id, front, left] of [['FL', true, true], ['FR', true, false], ['RL', false, true], ['RR', false, false]]) {
     const z = front ? zF : zR;
     const hwAt = table(body.hw, z);
-    const track = hwAt * 2 - tireW - 0.07 + (cfg.wheelOffset || 0) * 2;
+    const track = hwAt * 2 - tireW - 0.07 + (cfg.wheelOffset || 0) * 2 + (cfg.flares ? 0.05 : 0);
     const x = (left ? 1 : -1) * track * 0.5;
     const axleLoad = mass * g * (front ? frontWeight : 1 - frontWeight);
     const cornerMass = (axleLoad / g) * 0.5;
@@ -358,7 +358,8 @@ export function buildTuning(cfg) {
   };
 
   const brakeTorque = mass * g * 1.35 * R * 1.25 * (cfg.brakeKit ? 1.22 : 1);
-  const clA = cfg.spoiler === 'gt' ? 0.9 : cfg.spoiler === 'wing' ? 0.55 : cfg.spoiler === 'lip' ? 0.2 : 0.05;
+  const kit = cfg.bodyKit === 'aero' ? 0.25 : cfg.bodyKit === 'sport' ? 0.1 : 0;
+  const clA = (cfg.spoiler === 'gt' ? 0.9 : cfg.spoiler === 'wing' ? 0.55 : cfg.spoiler === 'lip' ? 0.2 : 0.05) + kit;
   return {
     body,
     bodyId: cfg.body,
@@ -370,7 +371,7 @@ export function buildTuning(cfg) {
     antiRoll: [kF * 0.45 * cfg.antiRoll, kR * 0.3 * cfg.antiRoll],
     maxSteer: body.kind === 'SUV' || body.kind === 'Pickup' || body.kind === 'Van' ? 0.56 : 0.6,
     brakes: { max: brakeTorque, handbrake: 1900, fadeStart: cfg.brakeKit ? 0.78 : 0.55 },
-    aero: { cdA: body.cdA + (cfg.spoiler === 'gt' ? 0.08 : cfg.spoiler === 'wing' ? 0.05 : 0), clA, balance: cfg.spoiler === 'none' ? 0.5 : 0.35 },
+    aero: { cdA: body.cdA + (cfg.spoiler === 'gt' ? 0.08 : cfg.spoiler === 'wing' ? 0.05 : 0) + kit * 0.12 + (cfg.flares ? 0.02 : 0), clA, balance: cfg.spoiler === 'none' ? (kit ? 0.55 : 0.5) : 0.35 },
     tire,
     powertrain,
     diff: cfg.diff,

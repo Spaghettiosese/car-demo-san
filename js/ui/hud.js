@@ -109,6 +109,93 @@ export class HUD {
   hurt(a) {
     this.hurtEl.style.opacity = String(clamp(a, 0, 1));
   }
+  // ------------------------------------------------------------ career widgets
+  updateCareer() {
+    const c = this.game.career;
+    const box = $('career-box');
+    box.classList.toggle('hidden', !c);
+    if (!c) return;
+    const m = Math.round(c.money);
+    if (m !== this.lastMoney) {
+      box.querySelector('.money').textContent = (m < 0 ? '-$' : '$') + Math.abs(m).toLocaleString('en-US');
+      box.querySelector('.money').style.color = m < 0 ? '#ff7070' : '';
+      this.lastMoney = m;
+    }
+    const pr = c.progress;
+    box.querySelector('.n').textContent = `LV ${pr.level}`;
+    box.querySelector('.xpbar .fill').style.width = `${Math.round(pr.frac * 100)}%`;
+  }
+  money(delta) {
+    const d = document.createElement('div');
+    d.className = 'delta ' + (delta < 0 ? 'neg' : 'pos');
+    d.textContent = (delta < 0 ? '-$' : '+$') + Math.abs(Math.round(delta)).toLocaleString('en-US');
+    $('career-box').querySelector('.deltas').appendChild(d);
+    setTimeout(() => d.remove(), 1700);
+  }
+  xp(n) {
+    if (n < 1) return;
+    const d = document.createElement('div');
+    d.className = 'delta xp';
+    d.textContent = `+${Math.round(n)} XP`;
+    $('career-box').querySelector('.deltas').appendChild(d);
+    setTimeout(() => d.remove(), 1700);
+  }
+  saving(ok) {
+    const el = $('career-box').querySelector('.save');
+    el.classList.add('on');
+    el.textContent = ok ? '💾' : '⚠';
+    setTimeout(() => el.classList.remove('on'), 1200);
+  }
+  notify(title, body, kind = '', time = 5) {
+    const d = document.createElement('div');
+    d.className = 'card ' + kind;
+    d.innerHTML = `<div class="t">${title}</div>${body ? `<div class="b">${body}</div>` : ''}`;
+    $('notify').appendChild(d);
+    const all = $('notify').children;
+    if (all.length > 4) all[0].remove();
+    setTimeout(() => d.remove(), time * 1000);
+  }
+  achievement(a) {
+    this.notify(a.name, `${a.desc}${a.xp ? ` · +${a.xp} XP` : ''}`, 'ach', 6);
+    this.game.audio?.chime?.('achievement');
+  }
+  hint(text, time = 7) {
+    const el = $('hint');
+    el.innerHTML = text;
+    el.classList.remove('hidden');
+    clearTimeout(this.hintT);
+    this.hintT = setTimeout(() => el.classList.add('hidden'), time * 1000);
+  }
+  /** Activity objective panel (null hides it). */
+  objective(o) {
+    const el = $('objective');
+    if (!o) {
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="t">${o.title || ''}</div>${o.big ? `<div class="big">${o.big}</div>` : ''}${o.text ? `<div class="s">${o.text}</div>` : ''}${o.bar != null ? `<div class="bar"><div class="fill" style="width:${Math.round(clamp(o.bar, 0, 1) * 100)}%;background:${o.barColor || '#ff6a1f'}"></div></div>` : ''}`;
+  }
+  /** Arrow pointing at a world position (null hides it). */
+  navArrow(target, label) {
+    const el = $('nav-arrow');
+    const g = this.game;
+    if (!target || !g.player.car && g.player.mode !== 'foot') {
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    const f = g.player.focus;
+    const dx = target.x - f.x, dz = target.z - f.z;
+    const cam = g.camera.getWorldDirection(new THREE.Vector3());
+    const camYaw = Math.atan2(cam.x, cam.z);
+    const ang = Math.atan2(dx, dz) - camYaw;
+    el.querySelector('.ar').style.transform = `rotate(${-ang * 180 / Math.PI - 90}deg)`;
+    const d = Math.hypot(dx, dz);
+    const units = g.settings.units;
+    el.querySelector('.d').textContent = `${label ? label + ' · ' : ''}${units === 'mph' ? (d / 1609).toFixed(d > 1609 ? 1 : 2) + ' mi' : d > 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m'}`;
+  }
+
   /** Sun glare (0..1), centred on the sun's screen position. */
   glare(a) {
     const el = this.glareEl;
@@ -186,6 +273,7 @@ export class HUD {
     if (showGauges) this.drawSpeedo(car);
     if (inCar) this.updateTellTales(car);
     this.updateWater(car);
+    if (this.frame % 6 === 0) this.updateCareer();
     if (!cockpit || !inCar) this.glare(0);
     if (this.frame % 2 === 0) this.drawMinimap(focus, g.player.heading);
     if (inCar && this.frame % 10 === 0) this.drawDamage(car);
