@@ -525,12 +525,14 @@ function drawSideText(ctx, W, H, prof, text, color, v0, v1, number = false) {
 
 const npcLiveries = new Map();
 function sharedLivery(bodyId, cfg, prof) {
-  const key = `${bodyId}:${cfg.livery}:${cfg.livery === 'police' || cfg.livery === 'taxi' ? cfg.paint : ''}`;
+  // police, taxi and service liveries (side stripe on ambulances, fire crews, tow trucks, buses) are kept
+  const keep = cfg.livery === 'police' || cfg.livery === 'taxi' || cfg.livery === 'side' || cfg.livery === 'stripes';
+  const key = `${bodyId}:${keep ? cfg.livery : 'none'}:${keep ? cfg.paint + (cfg.accent || '') : ''}`;
   if (npcLiveries.has(key)) return npcLiveries.get(key);
   const c = makeCanvas(512, 256);
   if (!c) return null;
   const ctx = c.getContext('2d');
-  const white = cfg.livery !== 'police' && cfg.livery !== 'taxi';
+  const white = !keep;
   paintLivery(ctx, 512, 256, cfg, prof, { base: white ? '#ffffff' : cfg.paint, simple: true, livery: white ? 'none' : cfg.livery });
   const t = canvasTexture(c);
   npcLiveries.set(key, t);
@@ -1170,15 +1172,16 @@ function buildDetails(cfg, prof, design, parts, tuning, npc, opts) {
     } else design.add(g);
     d.spoiler = g;
   }
-  // police light bar / taxi sign
-  if (opts.police) {
+  // police light bar, emergency beacons (opts.beacons: 'red' ambulance/fire, 'amber' tow) / taxi sign
+  if (opts.police || opts.beacons) {
     const z = (Z.roofF + Z.roofR) / 2 + 0.1;
     const y = f.top(z);
     const g = new THREE.Group();
     const base = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.06, 0.26), MATS.trim());
     g.add(base);
-    const red = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: new THREE.Color(0xff1020), emissiveIntensity: 0, transparent: true, opacity: 0.92 });
-    const blue = new THREE.MeshStandardMaterial({ color: 0x000055, emissive: new THREE.Color(0x2050ff), emissiveIntensity: 0, transparent: true, opacity: 0.92 });
+    const [cA, cB] = opts.beacons === 'amber' ? [0xff9a10, 0xffb020] : opts.beacons === 'red' ? [0xff1020, 0xf4f4ff] : [0xff1020, 0x2050ff];
+    const red = new THREE.MeshStandardMaterial({ color: new THREE.Color(cA).multiplyScalar(0.33), emissive: new THREE.Color(cA), emissiveIntensity: 0, transparent: true, opacity: 0.92 });
+    const blue = new THREE.MeshStandardMaterial({ color: new THREE.Color(cB).multiplyScalar(0.33), emissive: new THREE.Color(cB), emissiveIntensity: 0, transparent: true, opacity: 0.92 });
     const l = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.09, 0.22), red);
     l.position.set(0.28, 0.07, 0);
     const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.09, 0.22), blue);
@@ -1187,6 +1190,8 @@ function buildDetails(cfg, prof, design, parts, tuning, npc, opts) {
     g.position.set(0, y + 0.02, z);
     design.add(g);
     d.lightbar = { group: g, red, blue };
+  }
+  if (opts.police) {
     // push bar
     const pb = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.06), MATS.trim());
     pb.position.set(0, b.head.y - 0.1, skinZ(prof, 0, b.head.y - 0.1, 1) + 0.08);

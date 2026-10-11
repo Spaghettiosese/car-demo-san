@@ -3,6 +3,9 @@ import { clamp, lerp, smoothstep } from '../core/util.js';
 import { Radio } from './radio.js';
 import { installExtras } from './extras.js';
 
+const _lf = new THREE.Vector3();
+const _lu = new THREE.Vector3();
+
 // ------------------------------------------------------------------ synthesis helpers
 const ENGINE_PROFILES = {
   i4: { pattern: [1, 0.9, 1, 0.92], f: [165, 440, 900], a: [1, 0.55, 0.2], noise: 0.28, jitter: 0.01, decay: 90 },
@@ -219,7 +222,7 @@ class PlayerEngine {
       bp.connect(ng);
       ng.connect(audio.engineBus);
       n.start();
-      this.turbo = { o, g, ng };
+      this.turbo = { o, g, n, ng };
     }
     // gear whine
     this.whine = ctx.createOscillator();
@@ -323,7 +326,14 @@ class PlayerEngine {
       } catch (e) { /* already stopped */ }
     }
     for (const o of this.extra) try { o.stop(); } catch (e) { /* */ }
-    if (this.turbo) try { this.turbo.o.stop(); } catch (e) { /* */ }
+    if (this.turbo) {
+      for (const src of [this.turbo.o, this.turbo.n]) try { src.stop(); } catch (e) { /* */ }
+      this.turbo.g.disconnect();
+      this.turbo.ng.disconnect();
+    }
+    // these feed the engine bus directly, not through this.out
+    this.whineG.disconnect();
+    this.starterG.disconnect();
     this.out.disconnect();
   }
 }
@@ -825,6 +835,20 @@ export class AudioEngine {
   prevStation() { this.radio?.prev(); }
   toggleRadio() { this.radio?.toggle(); }
 
+  /** Pause and the map: everything drops to 30 % and speech holds. */
+  duck(on) {
+    if (!this.ready || this.ducked === on) return;
+    this.ducked = on;
+    const s = this.game.settings;
+    this.master.gain.setTargetAtTime(on ? s.masterVolume * 0.3 : s.masterVolume, this.ctx.currentTime, 0.1);
+    try {
+      if (on) window.speechSynthesis?.pause();
+      else window.speechSynthesis?.resume();
+    } catch (e) {
+      /* no speech */
+    }
+  }
+
   // ------------------------------------------------------------ per frame
   update(dt) {
     if (!this.ready) return;
@@ -832,13 +856,14 @@ export class AudioEngine {
     const t = ctx.currentTime;
     const game = this.game;
     const s = game.settings;
-    this.master.gain.setTargetAtTime(game.state === 'pause' ? s.masterVolume * 0.3 : s.masterVolume, t, 0.1);
+    if (this.ducked) this.duck(false);
+    this.master.gain.setTargetAtTime(s.masterVolume, t, 0.1);
     this.sfxBus.gain.setTargetAtTime(s.sfxVolume, t, 0.1);
     // listener = camera
     const cam = game.camera;
     const L = ctx.listener;
-    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-    const u = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+    const f = _lf.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    const u = _lu.set(0, 1, 0).applyQuaternion(cam.quaternion);
     if (L.positionX) {
       L.positionX.setTargetAtTime(cam.position.x, t, 0.01);
       L.positionY.setTargetAtTime(cam.position.y, t, 0.01);
@@ -860,11 +885,13 @@ export class AudioEngine {
     const closed = interior ? 1 - windowOpen * 0.8 : 0;
     this.worldFilter.frequency.setTargetAtTime(lerp(20000, 1400, closed), t, 0.1);
     const menu = game.state === 'menu' || game.state === 'garage';
+    // photo mode freezes the sim: the engine and the road go quiet with it
+    const frozenSim = game.cam?.mode === 'free' && s.photoPause !== false;
 
     if (this.playerEngine && car) {
       if (this.playerEngine.car !== car) this.setPlayerCar(car);
       this.playerEngine.update(dt, interior);
-      this.engineBus.gain.setTargetAtTime(menu ? 0.35 : game.player.mode === 'foot' ? 0.6 : 1, t, 0.1);
+      this.engineBus.gain.setTargetAtTime(frozenSim ? 0 : menu ? 0.35 : game.player.mode === 'foot' ? 0.6 : 1, t, 0.1);
       // powertrain events
       for (const ev of car.phys.pt.events) {
         if (ev.type === 'pop') this.pop(ev.big);
@@ -889,13 +916,14 @@ export class AudioEngine {
         else squeal = Math.max(squeal, sq);
         bumps = Math.max(bumps, w.impact);
       }
+      if (frozenSim) squeal = rough = 0;
       const wet = game.env.wetness;
       const tv = s.sfxVolume;
       this.squeal.g.gain.setTargetAtTime(squeal * 0.22 * (1 - wet * 0.8) * car.tuning.tire.squeal, t, 0.04);
       this.squeal2.g.gain.setTargetAtTime(squeal * 0.1 * (1 - wet * 0.8), t, 0.04);
       this.squeal.f.frequency.setTargetAtTime(1100 + Math.sin(t * 7) * 120 + squeal * 250, t, 0.05);
       this.rumble.g.gain.setTargetAtTime(clamp(rough, 0, 1) * 0.25, t, 0.05);
-      const sp = car.speed;
+      const sp = frozenSim ? 0 : car.speed;
       this.road.g.gain.setTargetAtTime(clamp(sp / 40, 0, 1) * (interior ? 0.28 : 0.18) + (wet > 0.3 ? clamp(sp / 30, 0, 1) * wet * 0.15 : 0), t, 0.1);
       this.road.f.frequency.setTargetAtTime(wet > 0.3 ? 900 : 260, t, 0.2);
       this.wind.g.gain.setTargetAtTime(clamp((sp * sp) / 2500, 0, 1) * (interior ? 0.08 + windowOpen * 0.25 : 0.2), t, 0.1);

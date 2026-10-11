@@ -45,6 +45,32 @@ export function installExtras(AudioEngine) {
     this.gustL = this.loopNoise(this.pink, 'bandpass', 320, 0.5, this.sfxBus);
     this.sandL = this.loopNoise(this.pink, 'lowpass', 1300, 0.5, this.sfxBus);
     this.gravelL = this.loopNoise(this.noise, 'bandpass', 2300, 1.4, this.sfxBus);
+    // rain on the roof: a pre-rendered 2 s loop of random drop ticks (one source, not one per drop)
+    {
+      const sr = ctx.sampleRate, len = sr * 2;
+      const buf = ctx.createBuffer(1, len, sr);
+      const d = buf.getChannelData(0);
+      for (let k = 0; k < 200; k++) {
+        const at = Math.floor(Math.random() * len);
+        const amp = 0.25 + Math.random() * 0.75;
+        const decay = 40 + Math.random() * 140;
+        for (let i = 0; i < 700; i++) d[(at + i) % len] += (Math.random() * 2 - 1) * amp * Math.exp(-i / decay);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 3800;
+      f.Q.value = 0.8;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f);
+      f.connect(g);
+      g.connect(this.sfxBus);
+      src.start();
+      this.roofRainL = { src, f, g };
+    }
     // brake squeal: a thin tone with vibrato
     this.squealT = ctx.createOscillator();
     this.squealT.type = 'sine';
@@ -231,12 +257,13 @@ export function installExtras(AudioEngine) {
     if (!this.ready) return;
     const s = this.game.settings;
     const synth = window.speechSynthesis;
-    if (s.npcVoices && synth && pos && pos.distanceTo(this.game.camera.position) < 30 && !synth.speaking) {
+    const vol = clamp(s.sfxVolume * 0.6 * (s.masterVolume ?? 1), 0, 1);
+    if (s.npcVoices && synth && vol > 0.01 && pos && pos.distanceTo(this.game.camera.position) < 30 && !synth.speaking) {
       try {
         const u = new SpeechSynthesisUtterance(text);
         u.rate = 1.15;
         u.pitch = kind === 'ped' ? 1.1 : 0.85;
-        u.volume = clamp(s.sfxVolume * 0.6, 0, 1);
+        u.volume = vol;
         synth.speak(u);
         return;
       } catch (e) {
@@ -274,12 +301,14 @@ export function installExtras(AudioEngine) {
   /** Turn-by-turn and other short spoken prompts (GPS). */
   P.say = function (text) {
     const synth = window.speechSynthesis;
-    if (!synth || !this.game.settings.gpsVoice) return;
+    const st = this.game.settings;
+    const vol = clamp(st.sfxVolume * (st.masterVolume ?? 1), 0, 1);
+    if (!synth || !st.gpsVoice || vol < 0.01) return;
     try {
       synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.05;
-      u.volume = clamp(this.game.settings.sfxVolume, 0, 1);
+      u.volume = vol;
       synth.speak(u);
     } catch (e) {
       /* no speech available */
@@ -530,15 +559,10 @@ export function installExtras(AudioEngine) {
     const gustK = interior ? 0.1 + winOpen * 0.5 : 1;
     this.gustL.g.gain.setTargetAtTime(menu ? 0 : clamp((ws - 2) / 14, 0, 1) * 0.12 * gustK * (0.6 + 0.4 * Math.sin(t * 0.7)), t, 0.4);
     this.gustL.f.frequency.setTargetAtTime(260 + ws * 18, t, 0.5);
-    // rain drumming on the roof
-    if (interior && env.rain > 0.05 && !(car.convertible && car.sys.roofOpen)) {
-      ex.dropT -= dt;
-      const rate = env.rain * 45;
-      while (ex.dropT <= 0) {
-        ex.dropT += 1 / rate;
-        this.noiseBurst(0.02, { gain: 0.015 + Math.random() * 0.03, type: 'bandpass', freq: 2500 + Math.random() * 4000, q: 3 });
-      }
-    }
+    // rain drumming on the roof (denser and louder as it pours)
+    const roof = interior && env.rain > 0.05 && !(car.convertible && car.sys.roofOpen);
+    this.roofRainL.g.gain.setTargetAtTime(roof && !menu ? 0.02 + env.rain * 0.07 : 0, t, 0.3);
+    this.roofRainL.src.playbackRate.setTargetAtTime(0.7 + env.rain * 0.5, t, 0.5);
     if (!menu && env.rain < 0.1) {
       const day = env.night < 0.5;
       // seagulls near the water

@@ -22,7 +22,8 @@ export class PlayerDriver {
     const v = car.speed;
     const fwd = car.forwardSpeed;
     // ignition helpers
-    if (!pt.running && !pt.cranking && d.throttle > 0.3 && s.autoIgnition && !car.wrecked && pt.energyFrac > 0 && !pt.hydrolocked) car.startEngine();
+    // (not EVs: they want the brake held and START pressed)
+    if (!pt.running && !pt.cranking && !pt.ev && d.throttle > 0.3 && s.autoIgnition && !car.wrecked && pt.energyFrac > 0 && !pt.hydrolocked) car.startEngine();
 
     // ---- clutch (realistic mode: you work it; otherwise it's automatic) ----
     pt.manualClutch = s.clutch === 'manual' && !pt.auto && !pt.ev;

@@ -40,6 +40,8 @@ export class PhotoMode {
     g.hud.show(true);
     if (this.el) this.el.classList.add('hidden');
     g.env.frozen = this.prevFrozen;
+    // the time-of-day slider is for the picture only: the world clock goes back
+    if (this.prevHour != null) g.env.setTime(this.prevHour);
     g.camera.fov = 62;
     g.camera.updateProjectionMatrix();
   }
@@ -47,6 +49,7 @@ export class PhotoMode {
   apply() {
     const g = this.game;
     if (g.post) g.post.photo = this.state;
+    g.cam.freeFov = this.state.fov;
     g.camera.fov = this.state.fov;
     g.camera.updateProjectionMatrix();
   }

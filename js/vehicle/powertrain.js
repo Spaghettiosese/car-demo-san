@@ -197,6 +197,8 @@ export class Powertrain {
    */
   autoShift(throttle, groundOmega, grounded, dt) {
     if (!this.auto || this.ev || this.selector !== 'D' || this.shiftTimer > 0 || this.gear < 1) return;
+    // shift on what the driver asks for: a TCS torque cut must not drop the shift points
+    if (this.pedal != null) throttle = Math.max(throttle, this.pedal);
     const s = this.spec;
     const n = s.gears.length;
     this.limiterHold = this.rpm > s.redline * 0.97 ? (this.limiterHold || 0) + dt : 0;
@@ -230,7 +232,8 @@ export class Powertrain {
     if (this.gear > 1) {
       const lower = Math.abs(groundOmega * this.ratio(this.gear - 1)) * RPM;
       const downAt = lerp(s.idle * 1.6, s.redline * 0.55, throttle * throttle) * (this.mode === 'sport' ? 1.35 : this.mode === 'eco' ? 0.85 : 1);
-      const wait = this.lastUp ? 1.1 : 0.4;
+      // after a full-throttle upshift, hold the gear for a moment (no hunting)
+      const wait = this.lastUp ? (throttle > 0.8 ? 2.2 : 1.1) : 0.4;
       if (groundRpm < downAt && lower < s.redline * 0.8 && this.sinceShift > wait) {
         this.shiftTo(this.gear - 1);
         this.lastUp = false;

@@ -339,7 +339,11 @@ export class VehiclePhysics {
       groundOmega += w.share * (w.contact ? w.vx / w.rNow : w.omega);
       S += (w.share * w.share) / (w.inertia + dt * w.rNow * w.kLong);
     }
-    const thr = clamp(input.throttle, 0, 1) * (1 - this.tcsCut);
+    let thr = clamp(input.throttle, 0, 1) * (1 - this.tcsCut);
+    // reverse speed limiter: fade the throttle out from about 22 to 32 km/h backwards
+    if (this.pt.gear < 0) thr *= clamp((8.9 + b.velocity.dot(FWD)) / 2.8, 0, 1);
+    // the gearbox reads the driver's pedal, not the traction-control cut
+    this.pt.pedal = clamp(input.throttle, 0, 1);
     const T = this.pt.update(dt, thr, drivenOmega, S || 1, grounded > 0, groundOmega);
     const parked = this.pt.selector === 'P' && this.pt.auto;
 

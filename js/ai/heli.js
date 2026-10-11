@@ -3,6 +3,7 @@ import { clamp } from '../core/util.js';
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _down = new THREE.Vector3(0, -1, 0);
 
 /**
  * Police helicopter for 4+ star pursuits: circles above the player, keeps
@@ -85,12 +86,13 @@ export class PoliceHeli {
     this.navR = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff2020 }));
     this.navR.position.set(0, -1.15, 0);
     g.add(this.navR);
-    // searchlight
-    this.spot = new THREE.SpotLight(0xf2f6ff, 0, 140, 0.16, 0.45, 1.2);
-    this.spot.position.set(0, -1.1, 1.4);
-    g.add(this.spot, this.spot.target);
-    this.beam = new THREE.Mesh(new THREE.ConeGeometry(4, 1, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-    this.game.scene.add(this.beam);
+    // searchlight: the game's pooled SpotLight (adding a light later would recompile every shader)
+    this.spot = this.opts.searchlight === false ? null : this.game.heliSpot || null;
+    if (this.spot) {
+      this.beam = new THREE.Mesh(new THREE.ConeGeometry(4, 1, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+      this.beam.visible = false;
+      this.game.scene.add(this.beam);
+    }
     return g;
   }
 
@@ -144,18 +146,22 @@ export class PoliceHeli {
     this.navR.visible = Math.floor(g.physics.time * 1.2) % 2 === 0;
     // searchlight at night
     const night = g.env.night;
-    if (target && !this.leaving && this.opts.searchlight !== false) {
-      this.spot.target.position.copy(this.root.worldToLocal(_v.copy(target)));
-      this.spot.intensity = night > 0.3 ? 900 * night : 0;
-      const from = this.root.localToWorld(_w.set(0, -1.1, 1.4));
-      const len = from.distanceTo(target);
-      this.beam.position.copy(from).lerp(target, 0.5);
-      this.beam.scale.set(1, len, 1);
-      this.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), _v.copy(target).sub(from).normalize());
-      this.beam.material.opacity = night > 0.3 ? 0.08 * night : 0;
-    } else {
-      this.spot.intensity = 0;
-      this.beam.material.opacity = 0;
+    if (this.spot) {
+      const on = target && !this.leaving && night > 0.3;
+      if (on) {
+        this.root.updateMatrixWorld();
+        const from = this.root.localToWorld(_w.set(0, -1.1, 1.4));
+        this.spot.position.copy(from);
+        this.spot.target.position.copy(target);
+        this.spot.target.updateMatrixWorld();
+        this.spot.intensity = 900 * night;
+        const len = from.distanceTo(target);
+        this.beam.position.copy(from).lerp(target, 0.5);
+        this.beam.scale.set(1, len, 1);
+        this.beam.quaternion.setFromUnitVectors(_down, _v.copy(target).sub(from).normalize());
+        this.beam.material.opacity = 0.08 * night;
+      } else this.spot.intensity = 0;
+      this.beam.visible = !!on;
     }
     if (!this.opts.quiet) g.audio?.heliRotor?.(this.pos, d, true);
     if (this.leaving && this.pos.distanceTo(g.player.focus) > 500) this.despawn();
@@ -165,8 +171,8 @@ export class PoliceHeli {
     this.active = false;
     this.leaving = false;
     this.root.visible = false;
-    this.beam.material.opacity = 0;
-    this.spot.intensity = 0;
+    if (this.beam) this.beam.visible = false;
+    if (this.spot) this.spot.intensity = 0;
     this.game.audio?.heliRotor?.(this.pos, 0, false);
   }
 }

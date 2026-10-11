@@ -281,6 +281,18 @@ export class City {
     return false;
   }
 
+  /** Inside an intersection box (where no lane has a clear direction). */
+  inJunction(x, z, pad = 1.5) {
+    if (Math.abs(x) > CITY_HALF || Math.abs(z) > CITY_HALF) return false;
+    let ix = false, iz = false;
+    for (let k = 0; k < N; k++) {
+      const c = roadCoord(k);
+      if (Math.abs(x - c) < RW / 2 + pad) ix = true;
+      if (Math.abs(z - c) < RW / 2 + pad) iz = true;
+    }
+    return ix && iz;
+  }
+
   // ------------------------------------------------------------ layout
   planBlocks() {
     const special = {
@@ -610,6 +622,7 @@ export class City {
       return m;
     });
     const roofMat = new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.95 });
+    (this.roofMats ||= []).push(roofMat); // snow settles on these
     const bmesh = new THREE.Mesh(fb.build(), [...facadeMats, roofMat]);
     bmesh.castShadow = true;
     bmesh.receiveShadow = true;
@@ -822,10 +835,15 @@ export class City {
 
   signBoard(x, z, text, bg, w = 8, h = 6, flat = false) {
     const t = signTexture(text, bg);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.25, side: THREE.DoubleSide }));
-    m.position.set(x, flat ? h : h, z);
+    // single-sided face (no mirrored text from behind) with a plain back panel
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.25 }));
+    m.position.set(x, h, z);
     if (flat) m.rotation.y = Math.PI;
     this.group.add(m);
+    const back = new THREE.Mesh(m.geometry, (this.signBackMat ||= new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.8, metalness: 0.3 })));
+    back.position.copy(m.position);
+    back.rotation.y = m.rotation.y + Math.PI;
+    this.group.add(back);
     this.nightMats.push({ mat: m.material, max: 1.2, min: 0.25 });
     if (!flat) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, h, 8), new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.6, roughness: 0.4 }));
@@ -953,14 +971,26 @@ export class City {
     m.castShadow = true;
     m.receiveShadow = true;
     this.group.add(m);
+    r.mesh = m;
     // the high back edge is a wall
     if (h1 > 0.6) {
       const bx = cx + Math.sin(yaw) * hl, bz = cz + Math.cos(yaw) * hl;
       const ex = Math.abs(Math.cos(yaw)) * hw + Math.abs(Math.sin(yaw)) * 0.3;
       const ez = Math.abs(Math.sin(yaw)) * hw + Math.abs(Math.cos(yaw)) * 0.3;
-      this.world.addBox(bx - ex, 0, bz - ez, bx + ex, h1 - 0.35, bz + ez, { kind: 'ramp' });
+      r.wall = this.world.addBox(bx - ex, 0, bz - ez, bx + ex, h1 - 0.35, bz + ez, { kind: 'ramp' });
     }
     return r;
+  }
+
+  /** Take away a ramp made by ramp() (sandbox spawns). */
+  removeRamp(r) {
+    if (r.mesh) {
+      this.group.remove(r.mesh);
+      r.mesh.geometry.dispose();
+      r.mesh.material.dispose();
+    }
+    this.world.removeRamp(r);
+    if (r.wall) this.world.removeBox(r.wall);
   }
 
   // ------------------------------------------------------------ proving grounds

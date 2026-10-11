@@ -76,6 +76,16 @@ void main() { gl_FragColor = vec4(uColor, uAlpha * vA); }`;
 
 export const WEATHERS = ['clear', 'cloudy', 'rain', 'storm', 'fog'];
 
+/** Sky palette (linear HDR) and scratch colours, so the per-frame sky update allocates nothing. */
+const SKY = {
+  zDay: new THREE.Color(0.24, 0.5, 1.15), hDay: new THREE.Color(0.85, 1.0, 1.2),
+  zSet: new THREE.Color(0.25, 0.3, 0.62), hSet: new THREE.Color(1.5, 0.72, 0.38),
+  zNight: new THREE.Color(0.004, 0.008, 0.025), hNight: new THREE.Color(0.035, 0.045, 0.075),
+  glow: new THREE.Color(0.06, 0.04, 0.025), grey0: new THREE.Color(0.55, 0.58, 0.62),
+  sunNoon: new THREE.Color(1.0, 0.95, 0.88), sunLow: new THREE.Color(1.0, 0.5, 0.22),
+  zenith: new THREE.Color(), horizon: new THREE.Color(), grey: new THREE.Color(), tmp: new THREE.Color(), sunCol: new THREE.Color(),
+};
+
 export class Environment {
   constructor(renderer, scene) {
     this.renderer = renderer;
@@ -202,9 +212,10 @@ export class Environment {
   }
 
   setWeather(w) {
-    this.weather = w;
+    if (typeof w === 'string' && w) this.weather = w;
   }
   setTime(h) {
+    if (!Number.isFinite(h)) return;
     this.hour = ((h % 24) + 24) % 24;
   }
 
@@ -239,7 +250,10 @@ export class Environment {
     (this.wind ||= new THREE.Vector3()).set(Math.cos(this.windDir) * this.windSpeed, 0, Math.sin(this.windDir) * this.windSpeed);
 
     // sun & moon
-    const a = ((this.hour - 6) / 24) * Math.PI * 2;
+    // a summer day: sunrise about 6:00, sunset about 20:00 (14 h of daylight, golden hour ~19:00)
+    const RISE = 6, SET = 20;
+    const h = this.hour;
+    const a = h >= RISE && h <= SET ? (Math.PI * (h - RISE)) / (SET - RISE) : Math.PI + (Math.PI * ((((h - SET) % 24) + 24) % 24)) / (24 - (SET - RISE));
     this.sunDir.set(Math.cos(a), Math.sin(a) * 0.9, -0.42 * Math.max(0.3, Math.sin(a))).normalize();
     this.moonDir.set(-Math.cos(a) * 0.8, -Math.sin(a) * 0.8 + 0.25, 0.4).normalize();
     const elev = this.sunDir.y;
@@ -248,24 +262,22 @@ export class Environment {
     const sunset = smoothstep(0.45, 0.02, Math.abs(elev)) * (1 - this.night * 0.7);
     const cloud = this.cloud;
     // palette (linear HDR)
-    const zDay = new THREE.Color(0.24, 0.5, 1.15), hDay = new THREE.Color(0.85, 1.0, 1.2);
-    const zSet = new THREE.Color(0.25, 0.3, 0.62), hSet = new THREE.Color(1.5, 0.72, 0.38);
-    const zNight = new THREE.Color(0.004, 0.008, 0.025), hNight = new THREE.Color(0.035, 0.045, 0.075);
-    const zenith = zNight.clone().lerp(zDay, day).lerp(zSet, sunset * 0.6);
-    const horizon = hNight.clone().lerp(hDay, day).lerp(hSet, sunset);
+    const P = SKY;
+    const zenith = P.zenith.copy(P.zNight).lerp(P.zDay, day).lerp(P.zSet, sunset * 0.6);
+    const horizon = P.horizon.copy(P.hNight).lerp(P.hDay, day).lerp(P.hSet, sunset);
     // city glow on the horizon at night
-    horizon.add(new THREE.Color(0.06, 0.04, 0.025).multiplyScalar(this.night));
+    horizon.add(P.tmp.copy(P.glow).multiplyScalar(this.night));
     // overcast greys
-    const grey = new THREE.Color(0.55, 0.58, 0.62).multiplyScalar(0.12 + day * 0.9);
+    const grey = P.grey.copy(P.grey0).multiplyScalar(0.12 + day * 0.9);
     zenith.lerp(grey, cloud * 0.8);
-    horizon.lerp(grey.clone().multiplyScalar(1.1), cloud * 0.75);
+    horizon.lerp(P.tmp.copy(grey).multiplyScalar(1.1), cloud * 0.75);
     const u = this.skyMat.uniforms;
     u.uSun.value.copy(this.sunDir);
     u.uMoon.value.copy(this.moonDir);
     u.uZenith.value.copy(zenith);
     u.uHorizon.value.copy(horizon);
     u.uGround.value.copy(horizon).multiplyScalar(0.3);
-    const sunCol = new THREE.Color(1.0, 0.95, 0.88).lerp(new THREE.Color(1.0, 0.5, 0.22), sunset);
+    const sunCol = P.sunCol.copy(P.sunNoon).lerp(P.sunLow, sunset);
     u.uSunColor.value.copy(sunCol);
     u.uNight.value = this.night;
     u.uCloud.value = cloud;
@@ -278,10 +290,12 @@ export class Environment {
       if (this.nextLightning < 0) {
         this.flash = 1;
         this.nextLightning = 5 + Math.random() * 14;
+        // the rumble arrives at the speed of sound (~2.9 s per km), on the game clock
         const dist = 0.3 + Math.random() * 3;
-        setTimeout(() => this.onThunder?.(dist), dist * 1000);
+        (this.thunderQ ||= []).push({ at: this.time + dist / 0.343, dist });
       }
     }
+    if (this.thunderQ?.length && this.time >= this.thunderQ[0].at) this.onThunder?.(this.thunderQ.shift().dist);
     const fl = this.flash > 0.5 ? this.flash : this.flash * 0.3;
     u.uFlash.value = fl;
 
@@ -291,20 +305,20 @@ export class Environment {
     const sunI = smoothstep(-0.03, 0.18, elev) * 3.4 * (1 - cloud * 0.75);
     const moonI = (1 - smoothstep(-0.12, 0.0, elev)) * 0.32 * (1 - cloud * 0.6);
     this.sun.intensity = (sunUp ? sunI : moonI) + fl * 2;
-    this.sun.color.copy(sunUp ? sunCol : new THREE.Color(0.6, 0.7, 1.0));
-    const f = focus || new THREE.Vector3();
+    if (sunUp) this.sun.color.copy(sunCol);
+    else this.sun.color.setRGB(0.6, 0.7, 1.0);
+    const f = focus || this.sun.target.position;
     // snap the shadow frustum to texels to stop shimmering
     const texel = (this.shadowSize * 2) / this.sun.shadow.mapSize.x;
     const fx = Math.round(f.x / texel) * texel, fz = Math.round(f.z / texel) * texel;
     this.sun.position.set(fx + dir.x * 200, dir.y * 200 + f.y, fz + dir.z * 200);
     this.sun.target.position.set(fx, f.y, fz);
     this.hemi.intensity = 0.12 + day * (0.75 - cloud * 0.15) + this.night * 0.1 + fl * 2;
-    this.hemi.color.copy(zenith).lerp(new THREE.Color(0.8, 0.85, 1), 0.5);
+    this.hemi.color.copy(zenith).lerp(P.tmp.setRGB(0.8, 0.85, 1), 0.5);
     this.hemi.groundColor.setRGB(0.18, 0.16, 0.14).multiplyScalar(0.3 + day * 0.7);
 
     // fog
-    const fogCol = horizon.clone().multiplyScalar(0.9);
-    this.scene.fog.color.copy(fogCol);
+    this.scene.fog.color.copy(horizon).multiplyScalar(0.9);
     this.scene.fog.density = (0.0011 + this.fogAmount * 0.009 + this.rain * 0.0015) * (this.fogScale || 1);
 
     // rain

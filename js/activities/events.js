@@ -181,9 +181,12 @@ function raceUpdate(ctx) {
   g.hud.objective({ title: ctx.def.name, big: fmtTime(ctx.t), text: `Position ${pos}/${ctx.drivers.length + 1}${ctx.laps ? ` · lap ${Math.min(ctx.laps, ctx.lap + 1)}/${ctx.laps}` : ''}` });
   if (done) {
     ctx.finishedAt = ctx.t;
-    ctx.place = ahead + 1;
-    ctx.score = ctx.place;
     ctx.timeScore = ctx.t + (ctx.falseStart ? 2 : 0);
+    // a false start costs 2 s: anyone who'd cross the line within that time beats you
+    const pen = ctx.falseStart ? 2 : 0;
+    const beaten = pen ? ctx.drivers.filter((d) => !d.finishedAt && (d.progress || 0) >= total - 6 - (d.car?.speed || 0) * pen).length : 0;
+    ctx.place = ahead + beaten + 1;
+    ctx.score = ctx.place;
     ctx.summary = `Time ${fmtTime(ctx.timeScore)} · finished P${ctx.place} of ${ctx.drivers.length + 1}`;
     return 'done';
   }
@@ -648,7 +651,9 @@ export function buildEvents(game) {
       g.hud.objective({ title: 'QUARTER MILE', big: `${ctx.t.toFixed(2)} s`, text: `${Math.round(car.speed * KMH)} km/h${ctx.react != null ? ` · reaction ${ctx.react.toFixed(3)} s` : ''}`, bar: clamp((z - drag.start) / 402, 0, 1) });
       if (z >= drag.quarter) {
         ctx.score = ctx.t + (ctx.falseStart ? 2 : 0);
-        ctx.place = ctx.rivalT && ctx.rivalT < ctx.t ? 2 : 1;
+        // the rival's (projected) time against yours with any false-start penalty
+        const rvT = ctx.rivalT || ctx.t + Math.max(0, drag.quarter - rv.body.position.z) / Math.max(rv.speed, 1);
+        ctx.place = rvT < ctx.score ? 2 : 1;
         ctx.summary = `${ctx.place === 1 ? 'You won!' : 'Beaten by ' + ctx.drivers[0].rival.name} · trap speed ${Math.round(car.speed * KMH)} km/h · reaction ${(ctx.react || 0).toFixed(3)} s`;
         return 'done';
       }
@@ -970,7 +975,8 @@ export function buildEvents(game) {
     countdown: false, falseStart: false, failOnWreck: false,
     setup(ctx) {
       const g = ctx.game;
-      if (!g.settings.cops) g.settings.cops = true;
+      ctx.copsWere = !!g.settings.cops;
+      g.settings.cops = true;
       g.police.heat = 3;
       g.police.startPursuit?.(null, false);
       g.police.dispatch?.(3, false);
@@ -990,6 +996,15 @@ export function buildEvents(game) {
         return 'done';
       }
       return null;
+    },
+    cleanup(ctx) {
+      const g = ctx.game;
+      // police were only switched on for this event: put the setting back and call off the chase
+      if (ctx.copsWere === false) {
+        g.settings.cops = false;
+        g.police.clearAll?.();
+        g.police.heat = 0;
+      }
     },
   });
 

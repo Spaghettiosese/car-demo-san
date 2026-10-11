@@ -29,7 +29,7 @@ export class Replay {
     this.head = 0; // next frame index
     this.count = 0;
     this.acc = 0;
-    this.snaps = []; // { frame, car, pos: Float32Array }
+    this.snaps = new Map(); // car -> [{ frame, pos: Float32Array }], oldest first
     this.snapT = 0;
     this.active = false;
     this.t = 0;
@@ -53,16 +53,34 @@ export class Replay {
       const c = this.slots[i];
       if (c && (c.removed || (c !== pc && c.body.position.distanceTo(focus) > 220))) this.slots[i] = null;
     }
-    const want = g.cars.filter((c) => !c.removed && (c === pc || c.body.position.distanceTo(focus) < 160)).sort((a, b) => (a === pc ? -1 : b === pc ? 1 : a.body.position.distanceToSquared(focus) - b.body.position.distanceToSquared(focus)));
-    for (const c of want) {
-      if (this.slots.includes(c)) continue;
-      const free = this.slots.indexOf(null);
-      if (free < 0) break;
-      this.slots[free] = c;
+    // the player's car always has a slot (a new car after a respawn takes the farthest one)
+    if (pc && !this.slots.includes(pc) && !this.slots.includes(null)) {
+      let far = 0, fd = -1;
+      for (let i = 0; i < MAXCARS; i++) {
+        const d = this.slots[i].body.position.distanceToSquared(focus);
+        if (d > fd) [far, fd] = [i, d];
+      }
+      this.slots[far] = null;
+      this.fillT = 0;
+    }
+    if (pc && !this.slots.includes(pc)) this.fillT = 0;
+    // fill free slots with the nearest cars (a few times a second is plenty)
+    this.fillT = (this.fillT || 0) - 1;
+    if (this.fillT <= 0 && this.slots.includes(null)) {
+      this.fillT = 8;
+      const want = g.cars.filter((c) => !c.removed && (c === pc || c.body.position.distanceTo(focus) < 160)).sort((a, b) => (a === pc ? -1 : b === pc ? 1 : a.body.position.distanceToSquared(focus) - b.body.position.distanceToSquared(focus)));
+      for (const c of want) {
+        if (this.slots.includes(c)) continue;
+        const free = this.slots.indexOf(null);
+        if (free < 0) break;
+        this.slots[free] = c;
+      }
     }
     const f = this.head;
     this.frameAbs[f] = this.total;
-    const mask = [];
+    // the ring slot's old mask is no longer needed: reuse it
+    const mask = this.frameCars[f] || [];
+    mask.length = 0;
     for (let i = 0; i < MAXCARS; i++) {
       const c = this.slots[i];
       if (!c) continue;
@@ -78,7 +96,7 @@ export class Replay {
         b[o + 8 + k * 3] = w ? w.spin : 0;
         b[o + 9 + k * 3] = w ? w.yaw : 0;
       }
-      b[o + 19] = (c.sys.brakeLight || c.phys.input.brake > 0.1 ? 1 : 0) + (c.sirenOn ? 2 : 0);
+      b[o + 19] = (c.sys.brakeLights || c.phys.input.brake > 0.1 ? 1 : 0) + (c.sirenOn ? 2 : 0);
       b[o + 20] = c.speed;
     }
     this.frameCars[f] = mask;
@@ -88,14 +106,26 @@ export class Replay {
       this.snapT = 0.5;
       for (const c of this.slots) {
         if (!c) continue;
+        c._replaySeen = this.total;
         const lat = c.model.lattice;
         if (lat.version === c._snapVer) continue;
         c._snapVer = lat.version;
-        this.snaps.push({ frame: this.total, car: c, pos: lat.pos.slice() });
+        // an undamaged body needs no snapshot: no entry means "at rest"
+        if (!this.snaps.has(c) && lat.totalDamage <= 0) continue;
+        let list = this.snaps.get(c);
+        if (!list) this.snaps.set(c, (list = []));
+        list.push({ frame: this.total, pos: lat.pos.slice() });
       }
-      // drop snapshots that fell out of the window (keep the newest older one per car as a base)
+      // forget cars that are gone or out of the window, and snapshots older than the
+      // window (keeping the newest older one as the base)
       const oldest = this.total - FRAMES;
-      this.snaps = this.snaps.filter((s, i, arr) => s.frame >= oldest || !arr.some((o, j) => j > i && o.car === s.car && o.frame <= oldest));
+      for (const [c, list] of this.snaps) {
+        if (c.removed || (c._replaySeen ?? -1) < oldest) {
+          this.snaps.delete(c);
+          continue;
+        }
+        while (list.length > 1 && list[1].frame <= oldest) list.shift();
+      }
     }
     this.head = (f + 1) % FRAMES;
     this.count = Math.min(FRAMES, this.count + 1);
@@ -127,6 +157,7 @@ export class Replay {
     this.live = g.cars.filter((c) => !c.removed).map((c) => ({
       c, pos: c.body.position.clone(), q: c.body.quaternion.clone(), vel: c.body.velocity.clone(), ang: c.body.angularVelocity.clone(),
       wheels: c.phys.wheels.map((w) => [w.s, w.spin, w.yaw, w.omega]), lat: c.model.lattice.pos.slice(), ver: c.model.lattice.version, sleeping: c.body.sleeping,
+      siren: !!c.sirenOn,
     }));
     this.target = g.player.car;
     this.buildUi();
@@ -148,6 +179,8 @@ export class Replay {
       c.body.angularVelocity.copy(s.ang);
       c.body.sleeping = s.sleeping;
       c.body.updateDerived();
+      c.sys.brakeLightReplay = null;
+      c.sirenOn = s.siren;
       s.wheels.forEach((v, k) => {
         const w = c.phys.wheels[k];
         if (!w) return;
@@ -203,13 +236,20 @@ export class Replay {
         wh.yaw = lerp(buf[oa + 9 + w * 3], buf[ob + 9 + w * 3], k);
       }
       c.sys.brakeLightReplay = buf[oa + 19] % 2 >= 1;
-      // body deformation: the latest snapshot at or before this frame
-      let snap = null;
-      for (const s of this.snaps) if (s.car === c && s.frame <= abs && (!snap || s.frame > snap.frame)) snap = s;
-      if (snap && (force || c._replaySnap !== snap)) {
-        c._replaySnap = snap;
-        c.model.lattice.pos.set(snap.pos);
-        c.model.applyDeformation();
+      c.sirenOn = buf[oa + 19] >= 2;
+      // body deformation: the latest snapshot at or before this frame (none yet: undamaged)
+      const list = this.snaps.get(c);
+      if (list) {
+        let snap = null;
+        for (let i = list.length - 1; i >= 0; i--) if (list[i].frame <= abs) {
+          snap = list[i];
+          break;
+        }
+        if (force || c._replaySnap !== (snap || 'rest')) {
+          c._replaySnap = snap || 'rest';
+          c.model.lattice.pos.set(snap ? snap.pos : c.model.lattice.rest);
+          c.model.applyDeformation();
+        }
       }
       c.syncVisual(0, this.t);
     }
@@ -353,7 +393,7 @@ export class Replay {
   onCrash(dv) {
     const g = this.game;
     if (!g.settings.autoReplay || this.active || g.activities?.current || dv < 22 || this.count < HZ * 3) return;
-    if ((this.lastAuto || 0) > performance.now() - 20000) return;
+    if (this.lastAuto != null && this.lastAuto > performance.now() - 20000) return;
     this.lastAuto = performance.now();
     this.pending = 1.4; // let the wreck settle first
   }

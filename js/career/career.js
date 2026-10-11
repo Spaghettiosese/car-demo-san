@@ -31,7 +31,7 @@ export class Career {
     const p = newProfile(slot);
     const c = new Career(game, p);
     c.log('Starting balance', p.money);
-    c.message('Uncle Vic', `Welcome to San Demo, kid. That hatchback has ${Math.round(p.garage[0].odometer / 1000)}k on the clock but she runs. Do some jobs, keep your nose clean, and come see me at the dealership when you've got real money.`);
+    c.message('Uncle Vic', `Welcome to San Demo, kid. That hatchback has ${Math.round(p.garage[0].odometer / 1e6)}k on the clock but she runs. Do some jobs, keep your nose clean, and come see me at the dealership when you've got real money.`);
     if (p.garage[0].cfg.migrated) c.message('San Demo Customs', 'We matched your new car to the colours of your old sandbox ride. On the house.');
     c.save();
     return c;
@@ -217,6 +217,7 @@ export class Career {
     e.odometer = Math.round(e.odometerBase ?? e.odometer) + car.ext.odo * 1000;
     e.serviceAt = car.ext.serviceAt;
     e.dirt = +car.ext.dirt.toFixed(2);
+    e.damage = car.damageSnapshot();
     this.dirty = true;
   }
   /** Apply a garage entry's saved state to a freshly spawned car. */
@@ -235,16 +236,17 @@ export class Career {
     car.ext.serviceAt = e.serviceAt ?? 3000;
     car.ext.dirt = e.dirt || 0;
     car.model.setDirt?.(car.ext.dirt);
+    car.restoreDamage(e.damage);
   }
   /** Depreciated market value of a garage entry. */
   value(e = this.car) {
     const base = carValue(e.cfg, e.parts);
     const km = (e.odometer || 0) / 1000;
-    return Math.round(base * clamp(1 - km / 250, 0.45, 1) * (0.5 + 0.5 * (e.engine ?? 1)));
+    return Math.round(base * clamp(1 - km / 250000, 0.45, 1) * (0.5 + 0.5 * (e.engine ?? 1)));
   }
   buyCar(cfg, price) {
     if (!this.charge(price, `Bought ${cfg.body}`)) return null;
-    const e = newGarageEntry(cfg, { odometer: 12 });
+    const e = newGarageEntry(cfg, { odometer: 12000 });
     e.parts = partsOf(cfg);
     this.p.garage.push(e);
     this.p.stats.carsBought++;

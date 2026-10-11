@@ -49,6 +49,11 @@ export function installHudExtras(HUD) {
     const ctx = this.speedo;
     const W = 250;
     ctx.clearRect(0, 0, W, W);
+    // the analog dial shares this context: reset what it leaves behind
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 0;
+    ctx.lineCap = 'butt';
     const units = this.game.settings.units;
     const speed = Math.abs(car.forwardSpeed) * (units === 'mph' ? MPH : KMH);
     const pt = car.phys.pt;
@@ -193,6 +198,7 @@ export function installHudExtras(HUD) {
     if (!route || route.length < 2 || !inCar) {
       el.classList.add('hidden');
       this.turnSaid.idx = -1;
+      g.gpsNav = null;
       return;
     }
     const p = g.player.focus;
@@ -226,6 +232,7 @@ export function installHudExtras(HUD) {
       const d = Math.hypot(end.x - p.x, end.z - p.z);
       icon = '🏁';
       text = `${fmt(d)} · destination`;
+      g.gpsNav = { turn: 0, dist: fmt(d), street: 'Destination' };
       if (d < 120 && this.turnSaid.idx !== 'end') {
         this.turnSaid.idx = 'end';
         this.speakGps('Your destination is ahead.');
@@ -235,6 +242,8 @@ export function installHudExtras(HUD) {
       const street = g.city.streetName(_v.set(turn.at.x + (route[turn.i + 1].x - turn.at.x) * 0.5, 0, turn.at.z + (route[turn.i + 1].z - turn.at.z) * 0.5));
       icon = turn.sharp ? '↶' : turn.dir === 'left' ? '↰' : '↱';
       text = turn.sharp ? `${fmt(dist)} · make a U-turn` : `${fmt(dist)} · ${turn.dir} onto <b>${street}</b>`;
+      // the dash-mounted phone shows the same instruction (its arrow points up for straight on)
+      g.gpsNav = { turn: turn.sharp ? Math.PI : turn.dir === 'left' ? -Math.PI / 2 : Math.PI / 2, dist: fmt(dist), street: turn.sharp ? 'U-turn' : street };
       if (this.turnSaid.idx !== turn.i) this.turnSaid = { idx: turn.i, far: false, near: false };
       if (!this.turnSaid.far && dist < 220 && dist > 90) {
         this.turnSaid.far = true;
@@ -313,19 +322,23 @@ export function installHudExtras(HUD) {
       const col = this.game.settings.colorBlind ? (v > 0.6 ? '#e69f00' : v > 0.25 ? '#f0e442' : '#56b4e9') : v > 0.6 ? '#ff3b30' : v > 0.25 ? '#ffcc00' : '#4cd964';
       return `<div class="dr"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%;background:${col}"></b></i><em>${pc(v)}</em></div>`;
     };
-    const parts = car.model.allParts.filter((p) => !car.model.glassParts[p.name] && p.name !== 'under');
-    const pname = (n) => ({ hood: 'Hood', trunk: 'Trunk', bumperF: 'Front bumper', bumperR: 'Rear bumper', doorFL: 'Door FL', doorFR: 'Door FR', doorRL: 'Door RL', doorRR: 'Door RR', fenderFL: 'Fender FL', fenderFR: 'Fender FR', mirrorL: 'Mirror L', mirrorR: 'Mirror R', spoiler: 'Spoiler' }[n] || n);
+    // front to rear, with readable names
+    const ORDER = ['bumperF', 'hood', 'fenderFL', 'fenderFR', 'doorFL', 'doorFR', 'doorRL', 'doorRR', 'body', 'trunk', 'spoiler', 'bumperR'];
+    const rank = (n) => (ORDER.includes(n) ? ORDER.indexOf(n) : 50);
+    const parts = car.model.allParts.filter((p) => !car.model.glassParts[p.name] && p.name !== 'under').sort((a, b) => rank(a.name) - rank(b.name));
+    const pname = (n) => ({ body: 'Body shell', hood: 'Hood', trunk: 'Trunk', bumperF: 'Front bumper', bumperR: 'Rear bumper', doorFL: 'Door, front left', doorFR: 'Door, front right', doorRL: 'Door, rear left', doorRR: 'Door, rear right', fenderFL: 'Fender, front left', fenderFR: 'Fender, front right', mirrorL: 'Mirror L', mirrorR: 'Mirror R', spoiler: 'Spoiler' }[n] || n[0].toUpperCase() + n.slice(1));
     const wheels = car.phys.wheels.map((w) => `${w.id}: ${w.detached ? '<b class="bad">OFF</b>' : `${w.flat ? '<b class="bad">flat</b> · ' : ''}bend ${(w.bend * 100).toFixed(0)}% · toe ${(w.toe * 57.3).toFixed(1)}° · wear ${Math.round((w.wear || 0) * 100)}% · ${Math.round(w.temp || 0)}°C`}`).join('<br>');
     const fluids = [];
     if (car.fuelLeak > 0.05) fluids.push('fuel leak');
-    if (car.oilLeak > 0.05) fluids.push('oil leak');
-    if (car.coolantLeak > 0.05) fluids.push('coolant leak');
+    if ((pt.oilLeak || 0) > 0.001) fluids.push('oil leak');
+    if ((pt.coolantLeak || 0) > 0.001 || pt.radiator < 0.6) fluids.push('coolant leak');
+    if (pt.brokenGears?.size) fluids.push(`gearbox: lost ${[...pt.brokenGears].sort().map((g) => `${g}${['', 'st', 'nd', 'rd'][g] || 'th'}`).join(', ')}`);
     return `<div class="dmg-report">
       ${bar(d.body, 'Body')}${bar(d.engine, 'Engine')}${bar(1 - (pt.oil ?? 1), 'Oil level loss')}${bar(clamp((pt.temp - 90) / 50, 0, 1), 'Overheating')}
       ${bar(d.glass.reduce((a, b) => a + b, 0) / Math.max(1, d.glass.length), 'Glass')}
       <div class="sub">Panels</div>${parts.map((p) => bar(p.state === 'detached' ? 1 : 1 - clamp(p.health, 0, 1), pname(p.name) + (p.state === 'detached' ? ' (gone)' : p.state === 'loose' ? ' (loose)' : ''))).join('')}
       <div class="sub">Wheels & suspension</div><div class="wl">${wheels}</div>
-      ${car.rackDamage ? `<div class="sub">Steering rack offset ${(car.phys.rackOffset * 57.3).toFixed(1)}°</div>` : ''}
+      ${car.phys.rackDamage ? `<div class="sub">Steering rack offset ${(car.phys.rackOffset * 57.3).toFixed(1)}°</div>` : ''}
       ${fluids.length ? `<div class="sub bad">⚠ ${fluids.join(' · ')}</div>` : ''}
     </div>`;
   };
@@ -369,7 +382,9 @@ export function installHudExtras(HUD) {
       frame.innerHTML = '<span>REAR</span>';
       document.getElementById('hud').appendChild(frame);
     }
-    frame.style.cssText = `left:${x}px;top:14px;width:${w}px;height:${h}px;display:block`;
+    // the frame lives in the (zoomed) HUD; the picture is in raw screen pixels
+    const z = this.game.settings.hudScale || 1;
+    frame.style.cssText = `left:${x / z}px;top:${14 / z}px;width:${w / z}px;height:${h / z}px;display:block`;
     this.pipShown = true;
     document.body.classList.add('pip');
   };

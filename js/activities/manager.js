@@ -64,7 +64,7 @@ export class ActivityManager {
     return this.defs.filter((d) => !d.hidden).map((d) => {
       const rec = ca ? ca.p.events[d.id] : this.freeRec?.[d.id];
       const reward = d.reward ? d.reward.gold : 0;
-      return { id: d.id, name: d.name, icon: d.icon, blurb: d.blurb, start: d.start, medal: rec?.medal || 0, locked: ca ? (d.level || 1) > ca.level : false, level: d.level || 1, reward };
+      return { id: d.id, name: d.name, icon: d.icon, blurb: d.blurb, start: d.start, medal: rec?.medal || 0, locked: ca ? (d.level || 1) > ca.level : false, level: d.level || 1, reward, job: !!d.job };
     });
   }
 
@@ -184,10 +184,8 @@ export class ActivityManager {
     const g = this.game;
     const ca = g.career;
     const rec = ca ? ca.p.events[def.id] : this.freeRec?.[def.id];
-    const locked = ca && (def.level || 1) > ca.level;
-    const suspended = ca && ca.suspended && def.job;
-    const pc = g.player.car;
-    const wrecked = ca && !def.lend && pc && (pc.wrecked || pc.phys.pt.health < 0.15);
+    const why = this.blocked(def);
+    const locked = why === 'locked', suspended = why === 'suspended', wrecked = why === 'wrecked';
     const daily = this.dailyId() === def.id;
     const board = (ca ? ca.p.leaderboards[def.id] : null) || [];
     const fmt = def.format || ((v) => v);
@@ -219,7 +217,31 @@ export class ActivityManager {
 
   closeCard() {
     this.cardEl.classList.add('hidden');
+    this.resultsDef = null;
     if (this.game.state === 'card') this.game.state = 'play';
+  }
+
+  /** Why the player can't enter this event right now: 'locked', 'suspended', 'wrecked' or ''. */
+  blocked(def) {
+    const ca = this.game.career;
+    if (!ca) return '';
+    if ((def.level || 1) > ca.level) return 'locked';
+    if (ca.suspended && def.job) return 'suspended';
+    const pc = this.game.player.car;
+    if (!def.lend && pc && (pc.wrecked || pc.phys.pt.health < 0.15)) return 'wrecked';
+    return '';
+  }
+
+  /** Start again, with the same checks as the event card. */
+  retry(def) {
+    const why = this.blocked(def);
+    if (why) {
+      this.game.toast(why === 'wrecked' ? 'Your car is too damaged to start again. Get it fixed first.' : why === 'suspended' ? 'Not with a suspended licence.' : `Reach level ${def.level} first.`, 'warn', 3);
+      return false;
+    }
+    this.closeCard();
+    this.start(def);
+    return true;
   }
 
   start(def) {
@@ -331,8 +353,8 @@ export class ActivityManager {
     const g = this.game;
     const def = ctx.def;
     ctx.status = result;
-    let score = ctx.score;
-    if (ctx.falseStart && def.lowerIsBetter) score += 2;
+    // events fold the +2 s false-start penalty into their own score (time, or race place)
+    const score = ctx.score;
     const ca = g.career;
     const recs = ca ? ca.p.events : (this.freeRec ||= {});
     const rec = (recs[def.id] ||= { best: null, medal: 0, runs: 0 });
@@ -428,22 +450,20 @@ export class ActivityManager {
       ${g.career && result === 'done' ? `<div class="pay">${r.money ? `+${fmtMoney(r.money)}` : ''} · +${r.xp} XP</div>` : ''}
       <div class="b"><button class="btn small primary" data-a="cont">Continue</button><button class="btn small" data-a="retry">Retry (F4)</button></div></div>`;
     this.lastDef = def;
+    this.resultsDef = def;
     this.cardEl.querySelector('[data-a=cont]').onclick = () => this.closeCard();
-    this.cardEl.querySelector('[data-a=retry]').onclick = () => {
-      this.closeCard();
-      this.start(def);
-    };
+    this.cardEl.querySelector('[data-a=retry]').onclick = () => this.retry(def);
     g.audio?.chime?.(result === 'done' && r.medal ? 'medal' : 'event');
   }
 
+  /** F4: restart the running event, or retry from its results card. Nothing otherwise. */
   restart() {
-    const def = this.current ? this.current.def : this.lastDef;
+    const def = this.current ? this.current.def : this.resultsDef;
     if (!def) return;
-    if (this.current) {
-      this.current.def.cleanup?.(this.current);
-      this.cleanupCtx(this.current);
-      this.current = null;
-    }
+    if (!this.current || this.blocked(def)) return this.retry(def);
+    this.current.def.cleanup?.(this.current);
+    this.cleanupCtx(this.current);
+    this.current = null;
     this.start(def);
   }
 

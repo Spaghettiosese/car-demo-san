@@ -33,7 +33,6 @@ export const DEFAULT_SETTINGS = {
   traffic: 26,
   parked: 18,
   cops: true,
-  copAggression: 1,
   damage: 1,
   slowmo: true,
   units: 'kmh',
@@ -103,6 +102,10 @@ const _q4 = new THREE.Quaternion();
 const _s4 = new THREE.Vector3();
 const _c4 = new THREE.Color();
 const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
+const _gnd = { y: 0 };
+const _fxDir = new THREE.Vector3();
+const _fxPos = new THREE.Vector3();
 
 export class Game {
   constructor() {
@@ -115,6 +118,7 @@ export class Game {
     this.fps = 60;
     this.player = { mode: 'car', car: null, focus: new THREE.Vector3(), heading: 0, onFoot: null };
     this.gps = null;
+    this.looseCars = [];
     this.stats = { crashes: 0, topSpeed: 0, distance: 0, fines: 0, bestDrag: null };
   }
 
@@ -182,10 +186,7 @@ export class Game {
     progress(0.95, 'Warming up tyres…');
     await tick();
     window.addEventListener('resize', () => this.resize());
-    this.resize();
-    this.applyViewDistance();
-    this.applyHudPrefs();
-    this.terrain?.setTreeDensity?.(this.settings.treeDensity);
+    this.applySettings();
     // warm up shader compilation
     this.renderer.compile(this.scene, this.camera);
     this.last = performance.now();
@@ -255,6 +256,10 @@ export class Game {
     });
     this.strobes = [new THREE.PointLight(0xff2020, 0, 40, 1.2), new THREE.PointLight(0x2050ff, 0, 40, 1.2)];
     for (const l of this.strobes) this.scene.add(l);
+    // the police helicopter's searchlight: part of the fixed pool, dark until a heli uses it
+    this.heliSpot = new THREE.SpotLight(0xf2f6ff, 0, 140, 0.16, 0.45, 1.2);
+    this.heliSpot.castShadow = false;
+    this.scene.add(this.heliSpot, this.heliSpot.target);
     // fake headlight pools for traffic at night
     const beamMat = new THREE.MeshBasicMaterial({ map: beamTexture(), color: new THREE.Color(1, 0.92, 0.78), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8, opacity: 0.7 });
     const bg = new THREE.PlaneGeometry(9, 22);
@@ -319,9 +324,7 @@ export class Game {
     // traffic beam pools
     let n = 0;
     if (night > 0.3) {
-      const m = new THREE.Matrix4();
-      const q = new THREE.Quaternion();
-      const one = new THREE.Vector3(1, 1, 1);
+      const m = _m4, q = _q4, one = _s4.set(1, 1, 1);
       for (const c of this.cars) {
         if (n >= 64) break;
         if (c === car || c.removed || c.sys.headlights !== 2 || !c.headlightOk(1) && !c.headlightOk(-1)) continue;
@@ -329,8 +332,8 @@ export class Game {
         const yaw = Math.atan2(c.body.R[2], c.body.R[8]);
         q.setFromAxisAngle(_v2.set(0, 1, 0), yaw);
         const fwd = _v.set(Math.sin(yaw), 0, Math.cos(yaw));
-        const pos = c.body.position.clone().addScaledVector(fwd, c.boundsMax.z);
-        pos.y = this.world.groundAt(pos.x, pos.z, pos.y, { y: 0 }).y + 0.02;
+        const pos = _v3.copy(c.body.position).addScaledVector(fwd, c.boundsMax.z);
+        pos.y = this.world.groundAt(pos.x, pos.z, pos.y, _gnd).y + 0.02;
         m.compose(pos, q, one);
         this.beams.setMatrixAt(n++, m);
       }
@@ -347,6 +350,23 @@ export class Game {
     this.camera.far = 3500 * k;
     this.camera.updateProjectionMatrix();
     this.env.fogScale = 1 / k;
+  }
+
+  /** Apply every setting to the live game: after startup, a quality preset or a reset. */
+  applySettings() {
+    const s = this.settings;
+    this.renderer.shadowMap.enabled = s.shadows;
+    this.env.sun.castShadow = s.shadows;
+    this.resize();
+    this.applyViewDistance();
+    this.applyHudPrefs();
+    this.terrain?.setTreeDensity?.(s.treeDensity);
+    this.cam.cockpitFov = s.cockpitFov ?? 72;
+    this.env.timeScale = (1 / 60) * s.timeScale;
+    this.env.frozen = s.timeScale === 0;
+    this.traffic?.setDensity(s.traffic);
+    this.audio?.applyVolumes?.();
+    this.applyAssistPreset(this.player.car);
   }
 
   /** HUD scale and the colour-blind palette. */
@@ -410,6 +430,8 @@ export class Game {
     const car = new Car(this, cfg, { player: true });
     car.isPlayer = true;
     car.sys.seatbelt = false;
+    const seat = this.settings.seats?.[cfg.body];
+    if (Array.isArray(seat)) [car.sys.seatH, car.sys.seatZ] = seat.map((v) => (Number.isFinite(v) ? v : 0));
     this.scene.add(car.root);
     if (where) {
       pos = where.pos;
@@ -427,6 +449,11 @@ export class Game {
     this.player.car = car;
     this.player.mode = 'car';
     this.cam.car = car;
+    // coming from on foot (pause → garage, a new session): back behind the wheel
+    if (this.cam.mode === 'foot') {
+      this.cam.setMode('cockpit');
+      this.hud.camName('cockpit');
+    }
     this.applyAssistPreset(car);
     if (this.interiorModule) this.interior = new this.interiorModule.Interior(this, car);
     this.audio?.setPlayerCar?.(car);
@@ -437,6 +464,36 @@ export class Game {
   addCar(car) {
     this.scene.add(car.root);
     this.cars.push(car);
+  }
+
+  /** Cars nobody drives (abandoned or stolen ones, sandbox spawns): they sleep far away, and go eventually. */
+  addLooseCar(car, sandboxSpawn = false) {
+    if (sandboxSpawn) car.sandboxSpawn = true;
+    if (!this.looseCars.includes(car)) this.looseCars.push(car);
+  }
+
+  updateLooseCars(dt) {
+    this.looseT = (this.looseT || 0) - dt;
+    if (this.looseT > 0) return;
+    this.looseT = 1;
+    const focus = this.player.focus;
+    for (let i = this.looseCars.length - 1; i >= 0; i--) {
+      const c = this.looseCars[i];
+      if (c.removed || c === this.player.car || c.controller) {
+        this.looseCars.splice(i, 1);
+        continue;
+      }
+      const d = c.body.position.distanceTo(focus);
+      if (d > 150 && c.physicsActive && c.speed < 0.5) {
+        c.physicsActive = false;
+        c.body.sleeping = true;
+      } else if (d < 120 && !c.physicsActive) c.physicsActive = true;
+      // your own career car waits where you left it; everything else is towed away eventually
+      if (d > 400 && !c.careerId && !this.traffic?.visible(c.body.position)) {
+        this.removeCar(c);
+        this.looseCars.splice(i, 1);
+      }
+    }
   }
 
   removeCar(car) {
@@ -553,7 +610,6 @@ export class Game {
     const mine = car === this.player.car;
     if (what === 'fire') {
       if (mine) this.toast('🔥 Your car is on fire! Get out (<kbd>F</kbd>)', 'warn', 5);
-      this.fireDept?.call?.(car);
     }
     if (what === 'fireOut' && mine) this.toast('Fire is out', 'good');
     if (what === 'burnt' && mine) this.toast('The car burned out', 'warn', 4);
@@ -669,7 +725,9 @@ export class Game {
     const input = this.input;
     input.poll();
     this.menus?.update?.(dt);
+    this.tutorial?.sync();
     if (this.state === 'menu') {
+      this.audio?.duck?.(false);
       this.menuBackground(dt);
       return;
     }
@@ -678,6 +736,7 @@ export class Game {
       return;
     }
     if (this.state === 'pause' || this.state === 'map') {
+      this.audio?.duck?.(true);
       if (this.state === 'map') this.hud.drawFullMap(document.getElementById('map-canvas'), this.player.focus, this.player.heading);
       if (input.pressed('pause') || (this.state === 'map' && input.pressed('map'))) this.menus?.closeAll();
       return;
@@ -690,6 +749,7 @@ export class Game {
     }
     if (this.state === 'card') {
       if (input.pressed('pause')) this.activities?.closeCard();
+      else if (input.pressed('restart') && this.activities?.resultsDef) this.activities.restart();
       return;
     }
     if (this.state !== 'play') return;
@@ -737,6 +797,7 @@ export class Game {
       }
       if (this.player.mode === 'foot') this.onFoot?.update(sim, input);
       this.debris.update(sim);
+      this.updateLooseCars(sim);
       this.replay?.record(sim);
       this.replay?.tickPending(dt);
     } else this.peds?.render?.();
@@ -758,7 +819,8 @@ export class Game {
       this.player.focus.copy(this.onFoot.position);
       this.player.heading = this.onFoot.yaw;
     }
-    this.env.update(dt * (this.settings.timeScale > 0 ? 1 : 0), this.player.focus, this.camera.position);
+    // a frozen clock (time speed 0) is env.frozen's job: weather and wind still move
+    this.env.update(dt, this.player.focus, this.camera.position);
     const night = this.env.night;
     this.city.setNight(night);
     this.props.setNight(night);
@@ -780,7 +842,7 @@ export class Game {
     for (const c of this.cars) c.setLod(c === pc && this.cam.mode !== 'free' ? 0 : c.body.position.distanceTo(cp));
     // camera
     this.cam.lookBack = input.held('lookBack', this.settings.holdLookBack !== false);
-    if (this.player.mode === 'foot' && this.onFoot) this.onFoot.updateCamera(dt, input);
+    if (this.player.mode === 'foot' && this.onFoot && this.cam.mode !== 'free') this.onFoot.updateCamera(dt, input);
     else this.cam.update(dt, input);
     this.env.sky.position.copy(this.camera.position);
     if (this.player.mode === 'car') this.interior?.update(dt, input);
@@ -807,6 +869,20 @@ export class Game {
 
   handleGlobalKeys() {
     const input = this.input;
+    // photo mode owns the keyboard: F2 or Esc leaves it, Enter snaps, H hides the panel
+    if (this.photo?.active) {
+      if (input.pressed('photo') || input.pressed('pause')) this.togglePhoto(false);
+      else {
+        this.photo.update();
+        if (input.keyPressed('Enter')) this.photo.snap();
+      }
+      return;
+    }
+    if (input.pressed('hideHud')) {
+      this.hudHidden = !this.hudHidden;
+      this.hud.show(!this.hudHidden);
+      if (this.hudHidden) this.toast('HUD hidden (F6 to show it again)', 'info', 1.5);
+    }
     if (input.pressed('pause')) {
       this.menus?.openPause();
       return;
@@ -821,12 +897,8 @@ export class Game {
       this.manualSlowmo = !this.manualSlowmo;
       this.toast(this.manualSlowmo ? 'Slow motion ON' : 'Slow motion OFF');
     }
-    if (input.pressed('photo')) this.togglePhoto();
+    if (input.pressed('photo')) return this.togglePhoto(true);
     if (input.pressed('replay')) this.replay?.start();
-    if (this.cam.mode === 'free' && this.photo?.active) {
-      this.photo.update();
-      if (input.keyPressed('Enter')) this.photo.snap();
-    }
     if (input.pressed('radio')) this.audio?.nextStation?.();
     if (input.pressed('enterExit') && !this.sandbox?.spectating) this.toggleOnFoot();
   }
@@ -914,9 +986,11 @@ export class Game {
     const smashed = (this.smashed ||= []);
     if (smashed.some((q) => Math.hypot(q.x - w.x, q.z - w.z) < 2.5)) return;
     if (smashed.length > 60) smashed.shift().m.removeFromParent();
-    // the hole: a dark, jagged decal with shards around the edge
+    // the hole: a dark, jagged decal with shards around the edge (one shared geometry + material)
     const tex = (this.smashTex ||= smashTexture());
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.6), new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 0.4 }));
+    this.smashGeo ||= new THREE.PlaneGeometry(3.2, 2.6);
+    this.smashMat ||= new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 0.4 });
+    const m = new THREE.Mesh(this.smashGeo, this.smashMat);
     m.position.set(w.x, Math.max(1.4, Math.min(p.y + 0.4, 2.6)), w.z);
     m.rotation.y = Math.atan2(w.nx, w.nz);
     this.scene.add(m);
@@ -997,6 +1071,14 @@ export class Game {
     if (input.down('seatDown')) s.seatH = Math.max(-0.08, s.seatH - dt * 0.08);
     if (input.down('seatFwd')) s.seatZ = Math.min(0.12, s.seatZ + dt * 0.1);
     if (input.down('seatBack')) s.seatZ = Math.max(-0.12, s.seatZ - dt * 0.1);
+    // remembered per body style once you let go of the keys
+    const adjusting = ['seatUp', 'seatDown', 'seatFwd', 'seatBack'].some((a) => input.down(a));
+    if (adjusting) this.seatDirty = true;
+    else if (this.seatDirty) {
+      this.seatDirty = false;
+      (this.settings.seats ||= {})[car.cfg.body] = [+s.seatH.toFixed(3), +s.seatZ.toFixed(3)];
+      this.menus?.saveSettings?.();
+    }
     if (input.pressed('camera')) {
       const m = this.cam.next();
       this.hud.camName(m);
@@ -1004,6 +1086,8 @@ export class Game {
     }
     if (input.pressed('ignition')) {
       if (car.phys.pt.running || car.phys.pt.cranking) car.stopEngine();
+      // an EV only goes READY with the brake held, like the real thing
+      else if (car.phys.pt.ev && car.phys.input.brake < 0.3 && input.drive().brake < 0.3) this.toast('Press the brake pedal (<kbd>S</kbd>) to start', 'info', 2);
       else car.startEngine();
     }
     if (input.pressed('lights')) {
@@ -1145,22 +1229,22 @@ export class Game {
         const sand = loose && w.mat.name === 'sand';
         if (loose && (car.speed > 4 || (sand && slide > 2)) && near) this.fx.dust(w.cp, v, w.mat.dust || [0.5, 0.45, 0.35], clamp(car.speed / 20 + slide / 10, 0, 1) * dt * 40 * (sand ? 2.6 : 1));
         // sand: a rooster tail thrown up behind spinning tyres
-        if (sand && slide > 3 && near) this.fx.dust(w.cp.clone().setY(w.cp.y + 0.25), _v.copy(v).multiplyScalar(-0.3).setY(3 + slide * 0.2), w.mat.dust, clamp(slide / 12, 0, 1) * dt * 50);
+        if (sand && slide > 3 && near) this.fx.dust(_v3.copy(w.cp).setY(w.cp.y + 0.25), _v.copy(v).multiplyScalar(-0.3).setY(3 + slide * 0.2), w.mat.dust, clamp(slide / 12, 0, 1) * dt * 50);
         if (wet > 0.3 && car.speed > 7 && near) this.fx.spray(w.cp, v, wet * clamp(car.speed / 25, 0, 1) * dt * 50);
       });
       // exhaust
       const pt = car.phys.pt;
       const ex = car.model.details.exhausts;
       if (near && ex.length) {
-        const dirW = car.body.toWorldDir(_v2.set(0, 0.2, -1), new THREE.Vector3());
+        const dirW = car.body.toWorldDir(_v2.set(0, 0.2, -1), _fxDir);
         for (const e of ex) {
-          const wp = car.body.toWorldPoint(_v.copy(e).sub(car.model.com), new THREE.Vector3());
+          const wp = car.body.toWorldPoint(_v.copy(e).sub(car.model.com), _fxPos);
           if (pt.running) this.fx.exhaust(wp, dirW, (0.05 + pt.throttle * 0.25) * dt * 60 * (this.env.hour < 8 ? 2 : 1), pt.health < 0.4 ? 1 : 0);
         }
         for (const ev of pt.events) {
           if (ev.type === 'pop') {
             const e = ex[Math.floor(Math.random() * ex.length)];
-            const wp = car.body.toWorldPoint(_v.copy(e).sub(car.model.com), new THREE.Vector3());
+            const wp = car.body.toWorldPoint(_v.copy(e).sub(car.model.com), _fxPos);
             this.fx.flame(wp, dirW, ev.big);
           }
         }
@@ -1242,13 +1326,23 @@ export class Game {
   /** Career: spawn the current garage car and go. */
   startCareer(slot, fresh) {
     this.menus?.clear?.();
-    this.career = fresh ? Career.fresh(this, slot) : Career.load(this, slot) || Career.fresh(this, slot);
-    this.mode = 'career';
-    this.police?.clearAll?.();
-    if (this.police) this.police.heat = 0;
-    this.spawnCareerCar(this.career.car, this.city.locations.garage);
+    this.resetSession();
+    try {
+      this.career = fresh ? Career.fresh(this, slot) : Career.load(this, slot) || Career.fresh(this, slot);
+      this.mode = 'career';
+      this.spawnCareerCar(this.career.car, this.city.locations.garage);
+    } catch (e) {
+      // never leave the player on a blank screen over a bad save
+      console.error(e);
+      this.career = null;
+      this.mode = 'free';
+      this.menus?.openMain();
+      this.toast(`Career slot ${slot} could not be loaded`, 'warn', 4);
+      return;
+    }
     this.startDriving();
-    if (fresh) this.tutorial?.start?.();
+    // a new career, or one that quit before finishing the intro
+    this.tutorial?.start?.();
   }
 
   spawnCareerCar(entry, where) {
@@ -1261,6 +1355,7 @@ export class Game {
 
   startFreeRoam() {
     this.menus?.clear?.();
+    this.resetSession();
     if (this.career) this.career.save();
     this.career = null;
     this.mode = 'free';
@@ -1274,7 +1369,30 @@ export class Game {
   quitToMenu() {
     if (this.career) this.career.save();
     this.activities?.abort?.();
+    this.resetSession();
     this.menus?.openMain();
+  }
+
+  /**
+   * A clean slate between sessions, so nothing from the sandbox, photo mode,
+   * a replay or the last career leaks into the next one.
+   */
+  resetSession() {
+    if (this.cam.mode === 'free' || this.photo?.active) this.togglePhoto(false);
+    if (this.replay?.active) this.replay.stop();
+    this.activities?.abort?.();
+    this.sandbox?.clear?.();
+    this.physics.gravity.set(0, -9.81, 0);
+    this.manualSlowmo = false;
+    this.slowmoTimer = 0;
+    this.timeScale = 1;
+    this.police?.clearAll?.();
+    if (this.police) this.police.evade = 0;
+    this.tutorial?.stop?.();
+    this.crash = null;
+    this.hudHidden = false;
+    this.gps = null;
+    if (this.player.mode === 'foot') this.onFoot?.forceEnter?.();
   }
 
   startDriving() {
@@ -1285,7 +1403,9 @@ export class Game {
       this.cam.setMode('cockpit');
       this.hud.camName('cockpit');
       setTimeout(() => {
-        this.hud.toast('Welcome to <b>San Demo</b>. Click the key (or press <kbd>I</kbd>) to start the engine.', 'info', 7);
+        // the career tutorial explains all this itself
+        if (this.tutorial?.active) return;
+        if (!this.player.car?.phys.pt.running) this.hud.toast('Welcome to <b>San Demo</b>. Click the key (or press <kbd>I</kbd>) to start the engine.', 'info', 7);
         this.hud.toast(`<kbd>C</kbd> cameras · <kbd>F1</kbd> controls · <kbd>Tab</kbd> phone · <kbd>Esc</kbd> ${this.career ? 'pause' : 'sandbox menu'}`, 'info', 7);
       }, 600);
     }

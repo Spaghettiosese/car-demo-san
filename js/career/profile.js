@@ -45,7 +45,7 @@ export function newGarageEntry(cfg, extra = {}) {
 }
 
 export function newProfile(slot = 1) {
-  const car = newGarageEntry(starterConfig(), { odometer: 41800 });
+  const car = newGarageEntry(starterConfig(), { odometer: 41_800_000 }); // metres: 41,800 km
   return {
     version: 2,
     slot,
@@ -96,7 +96,13 @@ export function loadProfile(slot = 1) {
     if (!p || p.version !== 2) return null;
     const base = newProfile(slot);
     const out = { ...base, ...p, slot, stats: { ...base.stats, ...(p.stats || {}) } };
-    out.garage = (out.garage || []).map((g) => ({ ...newGarageEntry(g.cfg), ...g }));
+    out.garage = (Array.isArray(out.garage) ? out.garage : []).filter((g) => g && g.cfg && g.cfg.body).map((g) => ({ ...newGarageEntry(g.cfg), ...g }));
+    // a save with no cars left (damaged or hand-edited) gets Uncle Vic's hatchback back
+    if (!out.garage.length) {
+      out.garage = base.garage;
+      out.current = base.current;
+    }
+    if (!out.garage.some((g) => g.id === out.current)) out.current = out.garage[0].id;
     return out;
   } catch (e) {
     return null;

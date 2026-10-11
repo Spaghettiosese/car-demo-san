@@ -107,6 +107,7 @@ export class Garage {
   open(from) {
     const g = this.game;
     this.from = from;
+    if (g.tutorial?.active) g.tutorial.sawGarage = true;
     const live = from !== 'menu' && g.player.car;
     if (this.career) {
       this.entry = this.career.car;

@@ -159,30 +159,30 @@ Object.assign(BODIES, {
   truck: {
     name: 'Titan Box 7', kind: 'Box truck', L: 7.2, R: 0.48, axles: [2.6, -2.2],
     mass: 6400, comY: 1.15, frontWeight: 0.45, cdA: 4.0, springHz: [1.35, 1.45], travel: [0.18, 0.15],
-    top: [[-3.6, 3.2], [-3.55, 3.3], [1.9, 3.3], [1.95, 2.66], [2.2, 2.63], [2.9, 2.5], [3.35, 1.62], [3.55, 1.3], [3.6, 1.0]],
-    belt: [[-3.6, 1.3], [1.95, 1.3], [2.3, 1.62], [3.3, 1.48], [3.6, 1.0]],
+    top: [[-3.6, 3.2], [-3.55, 3.3], [1.9, 3.3], [1.95, 2.72], [2.1, 2.72], [2.95, 1.72], [3.3, 1.5], [3.5, 1.3], [3.6, 1.0]],
+    belt: [[-3.6, 1.3], [1.95, 1.3], [2.3, 1.55], [2.95, 1.5], [3.3, 1.4], [3.6, 1.0]],
     bottom: [[-3.6, 0.88], [-3.5, 0.72], [3.4, 0.66], [3.6, 0.82]],
     hw: [[-3.6, 1.22], [1.9, 1.22], [2.0, 1.15], [3.4, 1.12], [3.6, 1.04]],
     gh: [[1.95, 0.95], [2.9, 0.92]],
-    zones: { cowl: 2.9, roofF: 2.2, roofR: 1.95, deck: -3.55 },
-    doors: { FL: [2.0, 3.2] },
-    sideGlass: [[2.05, 3.1]],
+    zones: { cowl: 2.95, roofF: 2.1, roofR: 1.95, deck: -3.55 },
+    doors: { FL: [2.0, 2.95] },
+    sideGlass: [[2.05, 2.85]],
     head: { y: 0.92, x0: 0.62, x1: 1.0, h: 0.18 },
     tail: { y: 1.0, x0: 0.95, x1: 1.15, h: 0.3 },
-    seat: { x: 0.55, y: 2.15, z: 2.55 },
+    seat: { x: 0.55, y: 2.15, z: 2.05 },
     defaults: { engine: 'diesel', drivetrain: 'rwd', diff: 'open', gearTop: 34, tire: 'offroad' },
   },
   bus: {
     name: 'MetroLiner 12', kind: 'City bus', L: 11.5, R: 0.5, axles: [3.6, -2.6],
     mass: 11500, comY: 1.2, frontWeight: 0.36, cdA: 6.4, springHz: [1.25, 1.3], travel: [0.16, 0.16],
-    top: [[-5.75, 2.9], [-5.7, 3.05], [-5.4, 3.12], [5.4, 3.12], [5.7, 3.0], [5.75, 2.6]],
+    top: [[-5.75, 2.9], [-5.7, 3.05], [-5.4, 3.12], [5.4, 3.12], [5.5, 3.08], [5.75, 1.3]],
     belt: [[-5.75, 1.3], [5.4, 1.15], [5.75, 0.95]],
     bottom: [[-5.75, 0.78], [-5.6, 0.42], [5.5, 0.42], [5.75, 0.72]],
     hw: [[-5.75, 1.22], [-5.6, 1.27], [5.5, 1.27], [5.75, 1.2]],
     gh: [[-5.5, 0.98], [5.5, 0.98]],
-    zones: { cowl: 5.45, roofF: 5.4, roofR: -5.4, deck: -5.6 },
+    zones: { cowl: 5.8, roofF: 5.45, roofR: -5.4, deck: -5.6 },
     doors: { FL: [3.9, 5.0], RL: [-0.8, 0.5] },
-    sideGlass: [[-5.3, -1.0], [-0.65, 0.35], [0.6, 3.7], [4.0, 5.35]],
+    sideGlass: [[-5.3, -1.0], [-0.65, 0.35], [0.6, 3.7], [4.0, 5.62]],
     head: { y: 0.85, x0: 0.75, x1: 1.15, h: 0.16 },
     tail: { y: 1.25, x0: 1.05, x1: 1.22, h: 0.42 },
     seat: { x: 0.72, y: 1.95, z: 4.75 },
@@ -259,6 +259,8 @@ export const BODY_GEARS = {
   supercar: [3.1, 2.15, 1.65, 1.32, 1.1, 0.94, 0.8], // 7-speed DCT
   bus: [3.4, 1.9, 1.3, 1.0, 0.75], // automatic city bus
 };
+/** Brake capacity relative to a car (big drums and air brakes on the heavy bodies). */
+export const BODY_BRAKES = { truck: 0.66, bus: 0.6 };
 export const BODY_TANKS = { sedan: 60, hatch: 45, muscle: 70, coupe: 55, suv: 80, pickup: 95, van: 80, classic: 50, truck: 120, supercar: 72, bus: 250 };
 
 export const PAINT_PRESETS = [
@@ -436,7 +438,8 @@ export function buildTuning(cfg) {
     launchRPM: eng.type === 'ev' ? 0 : Math.round(eng.redline * 0.58),
   };
 
-  const brakeTorque = mass * g * 1.35 * R * 1.25 * (cfg.brakeKit ? 1.22 : 1);
+  // heavy vehicles can't brake like a car: about 0.6 g for the truck, 0.55 g for the bus
+  const brakeTorque = mass * g * 1.35 * R * 1.25 * (cfg.brakeKit ? 1.22 : 1) * (BODY_BRAKES[cfg.body] ?? 1);
   const kit = cfg.bodyKit === 'aero' ? 0.25 : cfg.bodyKit === 'sport' ? 0.1 : 0;
   const clA = (cfg.spoiler === 'gt' ? 0.9 : cfg.spoiler === 'wing' ? 0.55 : cfg.spoiler === 'lip' ? 0.2 : 0.05) + kit;
   return {

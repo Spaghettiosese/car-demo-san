@@ -132,6 +132,13 @@ export class StaticWorld {
     return r;
   }
 
+  removeRamp(r) {
+    const i = this.ramps.indexOf(r);
+    if (i >= 0) this.ramps.splice(i, 1);
+    const ext = Math.hypot(r.hw * 2, r.hl * 2) / 2;
+    this._remove('ramps', r, r.cx - ext, r.cz - ext, r.cx + ext, r.cz + ext);
+  }
+
   /** A shallow dip in the ground (potholes, manhole covers). */
   addDip(x, z, r, depth) {
     const d = { x, z, r, depth };

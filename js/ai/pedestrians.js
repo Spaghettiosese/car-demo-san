@@ -492,7 +492,6 @@ export class Pedestrians {
         p.yaw = Math.atan2(-nx, -nz);
         if (c.isPlayer) {
           this.shout(p, ['Whoa!', 'Are you crazy?!', 'AAAH!', 'Watch out!'][Math.floor(Math.random() * 4)]);
-          g.activities?.onNearMissPed?.(p);
         }
       }
     }

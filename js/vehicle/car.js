@@ -210,7 +210,16 @@ export class Car {
   /** Called by the physics system for every contact impulse (world space). */
   registerImpact(point, dirIntoCar, jn, other, slide, kind) {
     if (jn <= 0) return;
-    this.impacts.push({ p: point.clone(), n: dirIntoCar.clone(), j: jn, other, slide: slide || 0, kind: kind || 'static' });
+    // pooled: the list is emptied every step, so its records can be reused
+    const pool = (this.impactPool ||= []);
+    const im = (pool[this.impacts.length] ||= { p: new THREE.Vector3(), n: new THREE.Vector3() });
+    im.p.copy(point);
+    im.n.copy(dirIntoCar);
+    im.j = jn;
+    im.other = other;
+    im.slide = slide || 0;
+    im.kind = kind || 'static';
+    this.impacts.push(im);
   }
 
   processImpacts(dt) {
@@ -349,9 +358,9 @@ export class Car {
     if (tank.distanceTo(lp) < 1.0 && strength > 9) this.fuelLeak = Math.min(1, this.fuelLeak + strength * 0.02);
   }
 
-  crackGlass(part, lp) {
+  crackGlass(part, lp, silent = false) {
     part.state = 'cracked';
-    this.game.onGlass?.(this, part, lp, false);
+    if (!silent) this.game.onGlass?.(this, part, lp, false);
     const tint = this.model.glass;
     if (!part.crackMat) {
       part.crackMat = tint.clone();
@@ -490,6 +499,126 @@ export class Car {
     if (this.isPlayer) this.game.interior?.reset?.();
   }
 
+  /**
+   * Compact snapshot of the body and component damage, so a career car keeps
+   * its dents, broken glass, lost panels and bent wheels across respawns and
+   * reloads. Lattice displacements are stored in millimetres, sparse.
+   */
+  damageSnapshot() {
+    const m = this.model, L = m.lattice, pt = this.phys.pt, x = this.ext;
+    const nodes = [];
+    for (let i = 0; i < L.count; i++) {
+      const dx = L.pos[i * 3] - L.rest[i * 3], dy = L.pos[i * 3 + 1] - L.rest[i * 3 + 1], dz = L.pos[i * 3 + 2] - L.rest[i * 3 + 2];
+      if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 0.002) nodes.push(i, Math.round(dx * 1000), Math.round(dy * 1000), Math.round(dz * 1000));
+    }
+    const parts = {};
+    for (const p of m.allParts) if (p.state !== 'ok' || p.health < 0.995) parts[p.name] = [p.state, +p.health.toFixed(3)];
+    const idx = (arr, f) => arr.reduce((o, v, i) => (f(v) && o.push(i), o), []);
+    return {
+      v: 1,
+      grid: L.count,
+      total: +L.totalDamage.toFixed(3),
+      nodes,
+      parts,
+      lights: idx(m.lights.all, (l) => l.broken),
+      mirrors: idx(m.details.mirrors, (mr) => !mr.attached),
+      wheels: this.phys.wheels.map((w) => [+w.bend.toFixed(4), +w.toe.toFixed(4), +w.camber.toFixed(4), w.flat ? 1 : 0, w.detached ? 1 : 0]),
+      radiator: +pt.radiator.toFixed(3),
+      coolant: +(pt.coolant ?? 1).toFixed(3),
+      oilLeak: +(pt.oilLeak || 0).toFixed(3),
+      coolantLeak: +(pt.coolantLeak || 0).toFixed(3),
+      gears: [...pt.brokenGears],
+      rack: [+(this.phys.rackDamage || 0).toFixed(3), +(this.phys.rackOffset || 0).toFixed(4)],
+      fuelLeak: +this.fuelLeak.toFixed(3),
+      sys: { lightAim: x.lightAim || 0, elecFault: x.elecFault || 0, fatigue: x.fatigue || 0, hornStuck: !!x.hornStuck, exhaustDrag: !!x.exhaustDrag, charring: x.charring || 0, burnt: !!x.burnt },
+      wrecked: !!this.wrecked,
+    };
+  }
+
+  /** Re-apply a damageSnapshot() to a freshly built car of the same body. */
+  restoreDamage(s) {
+    if (!s || s.v !== 1) return;
+    const m = this.model, L = m.lattice, pt = this.phys.pt, x = this.ext;
+    if (s.grid === L.count && s.nodes?.length) {
+      const n = s.nodes;
+      for (let k = 0; k + 3 < n.length; k += 4) {
+        const i = n[k];
+        if (i < 0 || i >= L.count) continue;
+        L.pos[i * 3] = L.rest[i * 3] + n[k + 1] / 1000;
+        L.pos[i * 3 + 1] = L.rest[i * 3 + 1] + n[k + 2] / 1000;
+        L.pos[i * 3 + 2] = L.rest[i * 3 + 2] + n[k + 3] / 1000;
+      }
+      // the yielded beams take the crushed shape as their new rest length
+      for (let b = 0; b < L.beamCount; b++) L.beamRest[b] = L.dist(L.beams[b * 2], L.beams[b * 2 + 1]);
+      L.totalDamage = s.total || 0;
+      L.version++;
+    }
+    for (const p of m.allParts) {
+      const st = s.parts?.[p.name];
+      if (!st) continue;
+      const [state, health] = st;
+      p.health = health;
+      if (state === 'detached') {
+        p.state = 'detached';
+        for (const ch of p.children) ch.state = 'detached';
+        p.group.visible = false;
+      } else if (state === 'shattered') {
+        p.state = 'shattered';
+        p.mesh.visible = false;
+      } else if (state === 'cracked') this.crackGlass(p, null, true);
+      else if (state === 'loose') p.state = 'loose';
+    }
+    for (const i of s.lights || []) {
+      const l = m.lights.all[i];
+      if (!l || l.broken) continue;
+      l.broken = true;
+      l.mat.emissiveIntensity = 0;
+      l.mat.color.multiplyScalar(0.35);
+      l.mesh.scale.multiplyScalar(0.97);
+    }
+    for (const i of s.mirrors || []) {
+      const mr = m.details.mirrors[i];
+      if (!mr || !mr.attached) continue;
+      mr.attached = false;
+      mr.group.visible = false;
+    }
+    (s.wheels || []).forEach((d, i) => {
+      const w = this.phys.wheels[i];
+      if (!w || !d) return;
+      [w.bend, w.toe, w.camber] = d;
+      w.flat = d[3] ? 1 : 0;
+      if (d[4]) {
+        w.detached = true;
+        m.wheels[i].group.visible = false;
+      }
+    });
+    pt.radiator = s.radiator ?? 1;
+    pt.coolant = s.coolant ?? 1;
+    pt.oilLeak = s.oilLeak || 0;
+    pt.coolantLeak = s.coolantLeak || 0;
+    for (const gi of s.gears || []) pt.brokenGears.add(gi);
+    if (s.rack) [this.phys.rackDamage, this.phys.rackOffset] = s.rack;
+    this.fuelLeak = s.fuelLeak || 0;
+    if (s.sys) {
+      Object.assign(x, { lightAim: s.sys.lightAim, elecFault: s.sys.elecFault, fatigue: s.sys.fatigue, hornStuck: s.sys.hornStuck, exhaustDrag: s.sys.exhaustDrag, burnt: s.sys.burnt });
+      x.charring = s.sys.charring;
+      if (x.charring) m.setChar?.(x.charring);
+    }
+    if (s.wrecked) this.wrecked = true;
+    this.refreshDeform();
+  }
+
+  /** Push the lattice shape into the meshes, hull and suspension mounts. */
+  refreshDeform() {
+    this.model.applyDeformation();
+    this.computeBounds();
+    for (const w of this.phys.wheels) {
+      const hpDesign = _v.copy(w.hp0).add(this.model.com);
+      const d = this.model.lattice.displacementAt(hpDesign, _v2);
+      w.hp.copy(w.hp0).add(d.clampLength(0, 0.22));
+    }
+  }
+
   /** 0..1 overall damage for the HUD. */
   damageSummary() {
     const m = this.model;
@@ -525,14 +654,8 @@ export class Car {
     if (this.pendingDeform && time - this.lastDeformUpdate > 0.05) {
       this.pendingDeform = false;
       this.lastDeformUpdate = time;
-      this.model.applyDeformation();
-      this.computeBounds();
-      // suspension mounts follow the crushed structure
-      for (const w of this.phys.wheels) {
-        const hpDesign = _v.copy(w.hp0).add(this.model.com);
-        const d = this.model.lattice.displacementAt(hpDesign, _v2);
-        w.hp.copy(w.hp0).add(d.clampLength(0, 0.22));
-      }
+      // the meshes, hull and suspension mounts follow the crushed structure
+      this.refreshDeform();
     }
     // indicator blink & self-cancel
     s.blink += dt;
@@ -589,7 +712,13 @@ export class Car {
       if (this.leakT <= 0) {
         this.leakT = 2.5;
         const w = this.game.world;
-        if (w.slicks.length > 120) w.slicks.splice(0, w.slicks.findIndex((q) => q.kind === 'oil' || q.kind === 'coolant') + 1);
+        // leak puddles live in a ring like their stains: drop the oldest one, never the
+        // built-in rain puddles or black ice
+        const isLeak = (q) => q.kind === 'oil' || q.kind === 'coolant';
+        if (w.slicks.reduce((k, q) => k + (isLeak(q) ? 1 : 0), 0) >= 96) {
+          const i = w.slicks.findIndex(isLeak);
+          if (i >= 0) w.slicks.splice(i, 1);
+        }
         const p = this.body.position;
         w.addSlick(p.x, p.z, this.speed < 2 ? 1.3 : 0.7, leaking, 400);
         this.game.onLeak?.(this, p, leaking);
@@ -683,7 +812,7 @@ export class Car {
     if (m.details.lightbar) {
       const lb = m.details.lightbar;
       if (this.unmarked) lb.group.visible = !!this.sirenOn; // hidden lights on unmarked cars
-      if (this.sirenOn) {
+      if (this.sirenOn || this.beaconsOn) {
         const ph = (time * 3.2) % 1;
         const strobe = ((time * 14) | 0) % 2;
         lb.red.emissiveIntensity = ph < 0.5 ? 4 * strobe + 1 : 0.1;
@@ -702,7 +831,7 @@ export class Car {
     const el = this.electrics;
     const inp = this.phys.input;
     const pt = this.phys.pt;
-    s.brakeLights = el && inp.brake > 0.05;
+    s.brakeLights = el && (s.brakeLightReplay != null ? s.brakeLightReplay : inp.brake > 0.05);
     s.reverseLights = el && pt.gear < 0;
     const lvl = this.npc ? s.headlights : s.lightLevel;
     // a weak battery dims everything

@@ -37,7 +37,7 @@ export class CameraRig {
     this.shake = 0;
     this.shakeT = 0;
     this.fovBase = 62;
-    this.cockpitFov = 72;
+    this.cockpitFov = game.settings?.cockpitFov ?? 72;
     this.tvPos = new THREE.Vector3();
     this.tvTimer = 0;
     this.freePos = new THREE.Vector3();
@@ -218,6 +218,8 @@ export class CameraRig {
         S.cockpitFov = clamp((S.cockpitFov || 72) + m.wheel * 2, 50, 100);
         this.cockpitFov = S.cockpitFov;
         this.game.toast?.(`Cockpit FOV ${S.cockpitFov}°`, 'info', 0.8);
+        clearTimeout(this.fovSaveT);
+        this.fovSaveT = setTimeout(() => this.game.menus?.saveSettings?.(), 800);
       }
       const zoom = m.down[1] ? 30 : 0;
       this.zoom = damp(this.zoom, zoom, 8, dt);
@@ -393,6 +395,12 @@ export class CameraRig {
     this.clampGround(this.freePos, 0.3);
     cam.position.copy(this.freePos);
     this.freeFov = clamp((this.freeFov || 55) + m.wheel * 3, 12, 100);
+    // photo mode's FOV slider and the mouse wheel drive the same value
+    const ph = this.game.photo;
+    if (ph?.active && m.wheel) {
+      ph.state.fov = Math.round(this.freeFov);
+      ph.sync();
+    }
     cam.fov = damp(cam.fov, this.freeFov, 5, dt);
     cam.near = 0.1;
     cam.updateProjectionMatrix();

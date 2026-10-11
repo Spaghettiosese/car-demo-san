@@ -458,7 +458,14 @@ export class FreeRoam {
     if (this.offerCd > 0 || car.speed > 0.5) return;
     const nl = g.city.nearestLane(car.body.position, car.body.axis(2, _v));
     if (!nl || nl.seg.stopDist - nl.dist > 14 || g.city.signalFor(nl.seg) !== 'red') return;
-    const npc = g.cars.find((c) => c !== car && !c.removed && c.controller && c.controller.lane !== undefined && c.speed < 0.5 && c.body.position.distanceTo(car.body.position) < 6);
+    // an ordinary traffic driver waiting at the same light, in the next lane over
+    const drivers = g.traffic?.drivers || [];
+    const npc = g.cars.find((c) => {
+      if (c === car || c.removed || !c.controller || c.police || c.service) return false;
+      const d = c.controller;
+      if (!drivers.includes(d) || d.state !== 'drive' || d.noRecycle || d.bSeg !== nl.seg) return false;
+      return c.speed < 0.5 && c.body.position.distanceTo(car.body.position) < 7;
+    });
     if (!npc) return;
     this.offerCd = 60;
     if (Math.random() > 0.55) return;

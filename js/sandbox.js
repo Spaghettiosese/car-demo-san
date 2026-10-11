@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Car } from './vehicle/car.js';
-import { configForBody, DEFAULT_CONFIG } from './vehicle/specs.js';
+import { configForBody, DEFAULT_CONFIG, BODIES } from './vehicle/specs.js';
 import { PathDriver, DerbyDriver, FleeDriver } from './ai/racer.js';
 import { Driver, randomPlate } from './ai/traffic.js';
 import { cityRoute } from './activities/events.js';
@@ -17,7 +17,7 @@ const _f = new THREE.Vector3();
 
 export const PRESETS = {
   noon: { name: '☀ Sunny noon', hour: 12.5, weather: 'clear' },
-  golden: { name: '🌅 Golden hour', hour: 18.6, weather: 'clear' },
+  golden: { name: '🌅 Golden hour', hour: 19.3, weather: 'clear' },
   dawnfog: { name: '🌫 Foggy dawn', hour: 6.3, weather: 'fog' },
   rainnight: { name: '🌧 Rainy night', hour: 23, weather: 'rain' },
   storm: { name: '⛈ Storm', hour: 16, weather: 'storm' },
@@ -104,20 +104,23 @@ export class Sandbox {
 
   /** Slippery black ice on the road ahead. */
   blackIce() {
-    const g = this.game;
-    const mat = new THREE.MeshStandardMaterial({ color: 0xcfe6ff, roughness: 0.02, metalness: 0.1, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
     for (let k = 0; k < 4; k++) {
       const p = this.ahead(25 + k * 16, (k % 2 ? 1 : -1) * 1.5);
-      const r = 3 + Math.random() * 2.5;
-      const gy = g.world.groundAt(p.x, p.z, p.y + 10, { y: 0 }).y;
-      const m = new THREE.Mesh(new THREE.CircleGeometry(r, 24), mat);
-      m.rotation.x = -Math.PI / 2;
-      m.position.set(p.x, gy + 0.02, p.z);
-      g.scene.add(m);
-      const sl = g.world.addSlick(p.x, p.z, r, 'ice');
-      this.ice.push({ m, sl, x: p.x, z: p.z, r });
+      this.addIce(p.x, p.z, 3 + Math.random() * 2.5, p.y);
     }
-    g.toast('❄ Black ice ahead!', 'info', 2);
+    this.game.toast('❄ Black ice ahead!', 'info', 2);
+  }
+
+  /** One black-ice patch: a glossy decal plus a low-grip slick. */
+  addIce(x, z, r, yRef = 30) {
+    const g = this.game;
+    this.iceMat ||= new THREE.MeshStandardMaterial({ color: 0xcfe6ff, roughness: 0.02, metalness: 0.1, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const gy = g.world.groundAt(x, z, yRef + 10, { y: 0 }).y;
+    const m = new THREE.Mesh(new THREE.CircleGeometry(r, 24), this.iceMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, gy + 0.02, z);
+    g.scene.add(m);
+    this.ice.push({ m, sl: g.world.addSlick(x, z, r, 'ice'), x, z, r });
   }
 
   /** A breakdown blocking both lanes ahead, with a queue of traffic stacked up behind it. */
@@ -218,7 +221,7 @@ export class Sandbox {
       weather: g.env.weather,
       traffic: g.settings.traffic,
       cops: g.settings.cops,
-      ramps: this.ramps,
+      ramps: this.ramps.map((r) => r.args),
       ice: this.ice.map((i) => [i.x, i.z, i.r]),
       ai: this.ai.filter((a) => !a.car.removed).map((a) => ({ kind: a.kind, pos: a.car.body.position.toArray(), yaw: Math.atan2(a.car.body.R[2], a.car.body.R[8]) })),
     };
@@ -237,6 +240,15 @@ export class Sandbox {
     });
   }
 
+  /** Is a saved scenario complete enough to load? (old or damaged saves are refused) */
+  static validScenario(sc) {
+    const num = (v) => typeof v === 'number' && Number.isFinite(v);
+    if (!sc || typeof sc !== 'object' || sc.v !== 1) return false;
+    if (!sc.car || !BODIES[sc.car.body]) return false;
+    if (!Array.isArray(sc.pos) || sc.pos.length !== 3 || !sc.pos.every(num) || !num(sc.yaw)) return false;
+    return true;
+  }
+
   loadScenario(slot) {
     const g = this.game;
     let sc = null;
@@ -249,24 +261,27 @@ export class Sandbox {
       g.toast(`Scenario ${slot} is empty`, 'warn', 2);
       return;
     }
+    if (!Sandbox.validScenario(sc)) {
+      g.toast(`Scenario ${slot} is damaged or from an old version and can't be loaded`, 'warn', 3);
+      return;
+    }
+    const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
     this.clear();
     g.police?.clearAll?.();
-    g.settings.traffic = sc.traffic;
-    g.settings.cops = sc.cops;
-    g.traffic?.setDensity(sc.traffic);
-    g.env.setTime(sc.hour);
-    g.env.setWeather(sc.weather);
-    g.carConfig = { ...sc.car };
+    g.settings.traffic = num(sc.traffic, g.settings.traffic);
+    if (typeof sc.cops === 'boolean') g.settings.cops = sc.cops;
+    g.traffic?.setDensity(g.settings.traffic);
+    g.env.setTime(num(sc.hour, g.env.hour));
+    if (typeof sc.weather === 'string') g.env.setWeather(sc.weather);
+    g.carConfig = { ...configForBody(sc.car.body, DEFAULT_CONFIG), ...sc.car };
     g.spawnPlayer(g.carConfig, { pos: new THREE.Vector3(...sc.pos), yaw: sc.yaw });
-    for (const r of sc.ramps || []) this.addRamp(...r);
-    for (const [x, z, r] of sc.ice || []) {
-      const m = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshStandardMaterial({ color: 0xcfe6ff, roughness: 0.02, transparent: true, opacity: 0.32, depthWrite: false }));
-      m.rotation.x = -Math.PI / 2;
-      m.position.set(x, g.world.groundAt(x, z, 30, { y: 0 }).y + 0.02, z);
-      g.scene.add(m);
-      this.ice.push({ m, sl: g.world.addSlick(x, z, r, 'ice'), x, z, r });
+    for (const r of Array.isArray(sc.ramps) ? sc.ramps : []) if (Array.isArray(r) && r.slice(0, 7).every((v) => num(v, null) !== null)) this.addRamp(...r);
+    for (const ice of Array.isArray(sc.ice) ? sc.ice : []) {
+      if (!Array.isArray(ice) || !ice.every((v) => num(v, null) !== null)) continue;
+      this.addIce(ice[0], ice[1], ice[2]);
     }
-    for (const a of sc.ai || []) {
+    for (const a of Array.isArray(sc.ai) ? sc.ai : []) {
+      if (!a || !Array.isArray(a.pos) || !a.pos.every((v) => num(v, null) !== null)) continue;
       this.spawnAI(a.kind);
       const last = this.ai[this.ai.length - 1];
       if (last) last.car.placeAt(a.pos[0], a.pos[1] - 0.6, a.pos[2], a.yaw);
@@ -275,22 +290,29 @@ export class Sandbox {
   }
 
   addRamp(x, z, yaw, w, l, h0, h1, mat) {
-    this.game.city.ramp(x, z, yaw, w, l, h0, h1, mat);
-    this.ramps.push([x, z, yaw, w, l, h0, h1, mat]);
+    const handle = this.game.city.ramp(x, z, yaw, w, l, h0, h1, mat);
+    this.ramps.push({ args: [x, z, yaw, w, l, h0, h1, mat], handle });
+  }
+
+  /** Take a sandbox AI out of the world (and out of traffic, if traffic drove it). */
+  retireAI(a) {
+    const g = this.game;
+    if (!a.car.removed) g.removeCar(a.car);
+    const i = g.traffic?.drivers.indexOf(a.drv) ?? -1;
+    if (i >= 0) g.traffic.drivers.splice(i, 1);
   }
 
   clear() {
     const g = this.game;
-    for (const a of this.ai) {
-      if (!a.car.removed) g.removeCar(a.car);
-      if (!a.own) {
-        const i = g.traffic.drivers.indexOf(a.drv);
-        if (i >= 0) g.traffic.drivers.splice(i, 1);
-      }
-    }
+    for (const a of this.ai) this.retireAI(a);
     this.ai.length = 0;
+    for (const r of this.ramps) g.city.removeRamp(r.handle);
+    this.ramps.length = 0;
+    // cars from the sandbox spawn menu (car, wall of cars, car rain)
+    for (const c of g.looseCars || []) if (c.sandboxSpawn && !c.removed && c !== g.player.car) g.removeCar(c);
     for (const i of this.ice) {
       g.scene.remove(i.m);
+      i.m.geometry.dispose();
       const k = g.world.slicks.indexOf(i.sl);
       if (k >= 0) g.world.slicks.splice(k, 1);
     }
@@ -306,7 +328,7 @@ export class Sandbox {
     for (let i = this.ai.length - 1; i >= 0; i--) {
       const a = this.ai[i];
       if (a.car.removed || a.car.body.position.distanceTo(g.player.focus) > 450) {
-        if (!a.car.removed) g.removeCar(a.car);
+        this.retireAI(a);
         this.ai.splice(i, 1);
         continue;
       }

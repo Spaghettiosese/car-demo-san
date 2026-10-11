@@ -446,7 +446,7 @@ export class Menus {
     const act = {
       repair: () => car.repair(),
       flip: () => g.recoverCar(car),
-      refuel: () => (car.phys.pt.fuel = 55),
+      refuel: () => car.phys.pt.refill(1),
       invuln: () => {
         car.invulnerable = !car.invulnerable;
         this.renderPause('sandbox');
@@ -563,6 +563,7 @@ export class Menus {
         c.body.sleeping = true;
         c.parked = true;
         g.addCar(c);
+        g.addLooseCar(c, true);
       }
     } else if (kind === 'cones' || kind === 'barrels') {
       for (let i = 0; i < (kind === 'cones' ? 10 : 9); i++) {
@@ -592,6 +593,7 @@ export class Menus {
       c.body.angularVelocity.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
       c.parked = true;
       g.addCar(c);
+      g.addLooseCar(c, true);
       setTimeout(drop, 350);
     };
     drop();
@@ -797,7 +799,6 @@ export class Menus {
     if (reset) reset.onclick = () => {
       Object.assign(s, DEFAULT_SETTINGS);
       this.applyGraphics();
-      g.applyHudPrefs?.();
       this.saveSettings();
       this.settingsRows(c, tab);
     };
@@ -837,14 +838,11 @@ export class Menus {
 
   applyGraphics() {
     const g = this.game;
-    const s = g.settings;
-    g.renderer.shadowMap.enabled = s.shadows;
-    g.env.sun.castShadow = s.shadows;
-    g.scene.traverse((o) => {
+    const shadowsChanged = g.renderer.shadowMap.enabled !== g.settings.shadows;
+    g.applySettings();
+    if (shadowsChanged) g.scene.traverse((o) => {
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => (m.needsUpdate = true));
     });
-    g.resize();
-    g.traffic?.setDensity(s.traffic);
   }
 
   saveSettings() {

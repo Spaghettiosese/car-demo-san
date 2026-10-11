@@ -35,13 +35,16 @@ export class Skidmarks {
     this.trails = new Map();
     this.dirty = false;
     this._side = new THREE.Vector3();
+    this._L = new THREE.Vector3();
+    this._R = new THREE.Vector3();
   }
 
   /** Call every frame for each wheel. intensity 0 ends the current trail. */
   add(key, p, dir, width, intensity, color = [0.02, 0.02, 0.02]) {
     let t = this.trails.get(key);
     if (intensity <= 0.02) {
-      if (t) t.active = false;
+      // the trail ends: forget it (keys of cars long gone would pile up otherwise)
+      if (t) this.trails.delete(key);
       return;
     }
     if (!t) {
@@ -49,8 +52,8 @@ export class Skidmarks {
       this.trails.set(key, t);
     }
     const side = this._side.set(-dir.z, 0, dir.x).normalize().multiplyScalar(width / 2);
-    const L = p.clone().add(side);
-    const R = p.clone().sub(side);
+    const L = this._L.copy(p).add(side);
+    const R = this._R.copy(p).sub(side);
     L.y = R.y = p.y + 0.015;
     if (!t.active) {
       t.active = true;

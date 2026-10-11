@@ -272,12 +272,14 @@ export class Radio {
     const line = this.newsLine();
     this.audio.game.hud.radio(`📻 “${line}”`);
     const synth = window.speechSynthesis;
-    if (synth && this.audio.game.settings.newsVoice) {
+    const st = this.audio.game.settings;
+    const vol = clamp(st.radioVolume * 1.2 * (st.masterVolume ?? 1), 0, 1);
+    if (synth && st.newsVoice && vol > 0.01) {
       try {
         const u = new SpeechSynthesisUtterance(line);
         u.rate = 1.05;
         u.pitch = 0.95;
-        u.volume = clamp(this.audio.game.settings.radioVolume * 1.2, 0, 1);
+        u.volume = vol;
         this.speaking = true;
         u.onend = u.onerror = () => (this.speaking = false);
         synth.speak(u);

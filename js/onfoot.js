@@ -146,6 +146,7 @@ export class OnFoot {
         old.isPlayer = false;
         old.parkLever = true;
         old.sys.hazard = false;
+        g.addLooseCar?.(old);
         if (old.model.details.driver) old.model.details.driver.visible = false;
       }
       car.isPlayer = true;

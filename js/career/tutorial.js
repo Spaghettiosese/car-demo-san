@@ -16,14 +16,19 @@ const STEPS = [
     done: (g, car) => car.speed > 6,
   },
   {
-    text: 'Follow the <b>blue GPS line</b> to San Demo Customs, your home garage. The town limit is 50 km/h. Red lights and STOP signs mean stop!',
-    enter: (g) => g.setWaypoint(g.city.locations.garage.pos.clone()),
-    done: (g, car) => car.body.position.distanceTo(g.city.locations.garage.pos) < 16,
+    text: 'Follow the <b>blue GPS line</b> to the <b>Fuel Stop</b>. The town limit is 50 km/h. Red lights and STOP signs mean stop!',
+    enter: (g) => g.setWaypoint(g.city.locations.gas.pos.clone()),
+    done: (g, car) => car.body.position.distanceTo(g.city.locations.gas.pos) < 18,
   },
   {
-    text: 'This is <b>San Demo Customs</b>. Stop in the bay and press <kbd>Enter</kbd> for repairs, servicing, paint and upgrades (they cost money in Career).',
-    done: (g, car, t) => g.state === 'garage' || t.seenGarage || t.t > 30,
-    tick: (g, t) => g.state === 'garage' && (t.seenGarage = true),
+    text: '<b>Fill up.</b> Stop next to a pump, press <kbd>Enter</kbd> to open the fuel door, switch the engine off (<kbd>I</kbd>) and hold <kbd>Enter</kbd>. EVs use the chargers on the west side. Fuel costs money in Career.',
+    tick: (g, t) => g.fuelingT > 0 && (t.fueled = (t.fueled || 0) + 1),
+    done: (g, car, t) => t.fueled > 30 || car.phys.pt.energyFrac > 0.97 || t.t > 45,
+  },
+  {
+    text: 'Now head back to <b>San Demo Customs</b>, your home garage (follow the GPS). Stop in the bay and press <kbd>Enter</kbd> for repairs, servicing, paint and upgrades.',
+    enter: (g) => g.setWaypoint(g.city.locations.garage.pos.clone()),
+    done: (g, car, t) => g.tutorial.sawGarage || t.t > 150,
   },
   {
     text: 'Money comes from <b>jobs and events</b>. Open your phone with <kbd>Tab</kbd> and look at <b>Jobs</b>, or the yellow markers on the map (<kbd>M</kbd>).',
@@ -49,7 +54,14 @@ export class Tutorial {
   start() {
     const g = this.game;
     if (!g.career || g.career.p.tutorialDone) return;
+    // an established career (older saves have no flag): no intro needed
+    const p = g.career.p;
+    if (g.career.level > 1 || Object.keys(p.events || {}).length) {
+      p.tutorialDone = true;
+      return;
+    }
     this.active = true;
+    this.sawGarage = false;
     this.i = -1;
     this.build();
     this.next();
@@ -62,7 +74,7 @@ export class Tutorial {
     }
     const el = document.createElement('div');
     el.id = 'tutorial';
-    el.innerHTML = '<div class="th"><b>Getting started</b><span class="steps"></span><button>Skip tutorial</button></div><div class="tt"></div>';
+    el.innerHTML = '<div class="th"><b>Getting started</b><span class="steps"></span><button>Skip tutorial</button></div><div class="tut-text"></div>';
     document.getElementById('hud').appendChild(el);
     el.addEventListener('mousedown', (e) => e.stopPropagation());
     el.querySelector('button').onclick = () => this.finish(true);
@@ -77,7 +89,7 @@ export class Tutorial {
     this.t = 0;
     this.state = { t: 0 };
     st.enter?.(g);
-    this.el.querySelector('.tt').innerHTML = st.text;
+    this.el.querySelector('.tut-text').innerHTML = st.text;
     this.el.querySelector('.steps').innerHTML = STEPS.map((_, k) => `<i class="${k < this.i ? 'd' : k === this.i ? 'c' : ''}"></i>`).join('');
     this.el.classList.remove('pop');
     void this.el.offsetWidth;
@@ -93,9 +105,18 @@ export class Tutorial {
     const st = STEPS[this.i];
     this.state.t += dt;
     st.tick?.(g, this.state);
-    // keep it on screen only while driving around
-    this.el.classList.toggle('hidden', g.state !== 'play');
     if (st.done(g, car, this.state)) this.next();
+  }
+
+  /** Leave the tutorial without finishing it (quit to the menu, another mode). */
+  stop() {
+    this.active = false;
+    if (this.el) this.el.classList.add('hidden');
+  }
+
+  /** Only on screen while actually driving around (not in pause, the map or a card). */
+  sync() {
+    if (this.el) this.el.classList.toggle('hidden', !this.active || this.game.state !== 'play');
   }
 
   finish(skipped) {

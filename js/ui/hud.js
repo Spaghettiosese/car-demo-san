@@ -55,6 +55,9 @@ export class HUD {
   }
 
   show(v) {
+    // photo mode, replays and F6 keep it hidden whoever asks
+    const g = this.game;
+    if (v && (g.photo?.active || g.replay?.active || g.hudHidden)) v = false;
     this.el.classList.toggle('hidden', !v);
   }
 
@@ -266,7 +269,7 @@ export class HUD {
       }
       const h = g.env.hour;
       const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
-      const w = { clear: '☀ Clear', cloudy: '☁ Cloudy', rain: '🌧 Rain', storm: '⛈ Storm', fog: '🌫 Fog', snow: '❄ Snow' }[g.env.weather];
+      const w = { clear: g.env.night > 0.5 ? '🌙 Clear' : '☀ Clear', cloudy: '☁ Cloudy', rain: '🌧 Rain', storm: '⛈ Storm', fog: '🌫 Fog', snow: '❄ Snow' }[g.env.weather];
       this.subEl.textContent = `San Demo · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${w}`;
     }
     const inCar = !!car && g.player.mode === 'car';
@@ -310,8 +313,9 @@ export class HUD {
         continue;
       }
       s.el.style.display = 'block';
-      s.el.style.left = ((v.x + 1) / 2) * w + 'px';
-      s.el.style.top = ((1 - v.y) / 2) * h + 'px';
+      const z = this.game.settings.hudScale || 1; // the speech layer sits inside the zoomed HUD
+      s.el.style.left = (((v.x + 1) / 2) * w) / z + 'px';
+      s.el.style.top = (((1 - v.y) / 2) * h) / z + 'px';
       s.el.style.opacity = String(Math.min(1, s.t * 2));
     }
   }
@@ -647,7 +651,9 @@ export class HUD {
     v.y = clamp(v.y, sw / 2, CW - sw / 2);
     const f = (S / CW) * v.zoom;
     ctx.clearRect(0, 0, S, S);
-    ctx.drawImage(this.mapCache, v.x - sw / 2, v.y - sw / 2, sw, sw, 0, 0, S, S);
+    // the unlabelled base: district names are drawn below at a fixed screen size
+    ctx.drawImage(this.mapBase || this.mapCache, v.x - sw / 2, v.y - sw / 2, sw, sw, 0, 0, S, S);
+    const flt = this.mapFilterUi();
     const toC = (x, z) => {
       const [mx, mz] = this.worldToMap(x, z);
       return [(mx - v.x) * f + S / 2, (mz - v.y) * f + S / 2];
@@ -678,13 +684,23 @@ export class HUD {
     }
     for (const c of g.cars) {
       if (c.removed || c === g.player.car) continue;
+      if (c.police ? !flt.police : !flt.traffic) continue;
       const [x, y] = toC(c.body.position.x, c.body.position.z);
       ctx.fillStyle = c.police ? '#5b8cff' : 'rgba(230,230,230,0.6)';
       ctx.fillRect(x - 2, y - 2, 4, 4);
     }
-    // services and events, as icons in a circle
+    // services and events, as icons in a circle; labels go in after, wherever they fit
+    const labels = [];
+    const placed = [];
+    const fits = (x, y, w, h) => {
+      for (const r of placed) if (x < r[0] + r[2] && x + w > r[0] && y < r[1] + r[3] && y + h > r[1]) return false;
+      placed.push([x, y, w, h]);
+      return true;
+    };
     const icon = (x, z, glyph, ring, label) => {
       const [cx, cy] = toC(x, z);
+      if (cx < -20 || cy < -20 || cx > S + 20 || cy > S + 20) return;
+      placed.push([cx - 12, cy - 12, 24, 24]);
       ctx.fillStyle = 'rgba(12,14,18,0.85)';
       ctx.strokeStyle = ring;
       ctx.lineWidth = 2;
@@ -697,23 +713,52 @@ export class HUD {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#fff';
       ctx.fillText(glyph, cx, cy + 1);
-      if (label && v.zoom >= 1.8) {
-        ctx.font = 'bold 10px sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.fillText(label, cx, cy + 20);
-      }
+      if (label && v.zoom >= 1.8) labels.push([label, cx, cy + 20]);
       ctx.textBaseline = 'alphabetic';
     };
     const L = g.city.locations;
     const svc = { garage: '🔧', gas: '⛽', dealer: '🚗', hospital: '🏥', police: '🚓' };
-    for (const k in svc) if (L[k]) icon(L[k].pos.x, L[k].pos.z, svc[k], '#4cd964', L[k].name);
-    if (g.city.carWash) icon(g.city.carWash.x, g.city.carWash.z, '🫧', '#4cd964', 'Car wash');
+    const named = new Set();
+    if (flt.services) {
+      for (const k in svc) if (L[k]) {
+        icon(L[k].pos.x, L[k].pos.z, svc[k], '#4cd964', L[k].name);
+        named.add(L[k].name);
+      }
+      if (g.city.carWash) icon(g.city.carWash.x, g.city.carWash.z, '🫧', '#4cd964', 'Car wash');
+    }
     if (g.activities) {
       for (const a of g.activities.list()) {
         if (!a.start) continue;
+        if (a.locked ? !flt.locked : a.job ? !flt.jobs : !flt.events) continue;
         icon(a.start.x, a.start.z, a.icon || '🏁', a.locked ? '#666' : ['#ffd36a', '#cd7f32', '#c0c0c0', '#ffd700'][a.medal], a.locked ? `🔒 Lv ${a.level}` : a.name);
       }
     }
+    // icon labels first, then district names, each only where nothing else is
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 10px sans-serif';
+    for (const [t, x, y] of labels) {
+      const w = ctx.measureText(t).width + 4;
+      if (!fits(x - w / 2, y - 6, w, 12)) continue;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(t, x + 1, y + 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillText(t, x, y);
+    }
+    if (flt.places) {
+      ctx.font = 'bold 11px sans-serif';
+      for (const l of this.mapLabels || []) {
+        if (named.has(l.text)) continue;
+        const x = (l.x - v.x) * f + S / 2, y = (l.z - v.y) * f + S / 2;
+        const w = ctx.measureText(l.text).width + 6;
+        if (x < 0 || y < 0 || x > S || y > S || !fits(x - w / 2, y - 7, w, 14)) continue;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillText(l.text, x + 1, y + 1);
+        ctx.fillStyle = 'rgba(255,236,190,0.85)';
+        ctx.fillText(l.text, x, y);
+      }
+    }
+    ctx.textBaseline = 'alphabetic';
     const [px, py] = toC(playerPos.x, playerPos.z);
     ctx.save();
     ctx.translate(px, py);
@@ -730,6 +775,31 @@ export class HUD {
       const mx = (cxp - S / 2) / f + v.x, my = (cyp - S / 2) / f + v.y;
       return new THREE.Vector3(mx / this.mapScale + this.mapExt.x0, 0, my / this.mapScale + this.mapExt.z0);
     };
+  }
+
+  /** The full map's legend with a show/hide toggle per category (built once, inside #map-full). */
+  mapFilterUi() {
+    const f = (this.mapFilter ||= { services: true, jobs: true, events: true, locked: true, places: true, traffic: true, police: true });
+    if (!this.mapLegend) {
+      const host = document.getElementById('map-full');
+      const el = document.createElement('div');
+      el.className = 'map-legend';
+      const rows = [
+        ['services', '🔧', 'Services: garage, fuel, dealer, hospital, car wash'],
+        ['jobs', '🚕', 'Jobs'],
+        ['events', '🏁', 'Races & challenges (ring = your medal)'],
+        ['locked', '🔒', 'Locked events'],
+        ['places', '🏙️', 'District names'],
+        ['traffic', '▫️', 'Traffic'],
+        ['police', '🚓', 'Police'],
+      ];
+      el.innerHTML = `<b>Legend</b>${rows.map(([k, ic, t]) => `<label><input type="checkbox" data-k="${k}" ${f[k] ? 'checked' : ''}><span>${ic}</span>${t}</label>`).join('')}<div class="me"><i></i>You</div>`;
+      el.addEventListener('mousedown', (e) => e.stopPropagation());
+      el.querySelectorAll('input').forEach((c) => (c.onchange = () => (f[c.dataset.k] = c.checked)));
+      host?.appendChild(el);
+      this.mapLegend = el;
+    }
+    return f;
   }
 
   // ------------------------------------------------------------ damage view

@@ -226,6 +226,12 @@ export class Phone {
     const ca = g.career;
     const car = g.player.car;
     const say = (t) => g.toast(t, 'info', 4);
+    // nobody comes out to help you dodge the law or skip an event
+    if (who === 'tow' || who === 'taxi' || who === 'mechanic') {
+      const name = who === 'tow' ? 'Earl' : who === 'taxi' ? 'Dispatch' : 'The mechanic';
+      if ((g.police?.heat || 0) > 0) return say(`${name}: "Not while the cops are on you. Call me when it's quiet."`);
+      if (g.activities?.current) return say(`${name}: "Finish what you're doing first." (quit the event from the pause menu)`);
+    }
     if (who === 'tow') {
       if (!car) return;
       if (ca && !ca.p.insurance.active && !ca.charge(250, 'Tow truck')) return say('Earl: "Cash up front, pal." (not enough money)');

@@ -47,7 +47,7 @@ export class Services {
       spot = s;
     }
     if (!spot) return null;
-    const car = new Car(g, UNIT_CFG[kind](), { npc: true });
+    const car = new Car(g, UNIT_CFG[kind](), { npc: true, beacons: kind === 'tow' ? 'amber' : 'red' });
     g.addCar(car);
     car.placeAt(spot.pos.x, 0, spot.pos.z, spot.yaw);
     car.phys.pt.running = true;
@@ -55,6 +55,7 @@ export class Services {
     car.physicsActive = true;
     car.service = kind;
     car.sirenOn = kind !== 'tow';
+    car.beaconsOn = true; // the tow truck flashes amber without a siren
     car.sys.headlights = 2;
     const drv = new Driver(car, g.traffic || { game: g });
     drv.speedFactor = kind === 'tow' ? 1.05 : 1.35;
@@ -292,6 +293,7 @@ export class Services {
       if (j.life <= 0) {
         this.game.scene.remove(j.m);
         j.m.geometry.dispose();
+        j.m.material.dispose();
         this.jets.splice(i, 1);
       }
     }
@@ -437,6 +439,11 @@ export class Services {
     for (const b of this.buses || []) {
       const { car, drv } = b;
       if (car.removed) continue;
+      // stolen (or otherwise taken over): it's not running the route any more
+      if (car.isPlayer || car.controller !== drv) {
+        b.retired = true;
+        continue;
+      }
       if (drv.state === 'wrecked') continue;
       // keep heading round the ring
       const goal = drv.routeGoal;

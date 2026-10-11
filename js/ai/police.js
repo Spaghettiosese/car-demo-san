@@ -254,7 +254,11 @@ export class PoliceManager {
   targetCar() {
     const g = this.game;
     if (g.player.mode === 'car') return g.player.car;
-    return g.onFoot ? { body: { position: g.onFoot.position, velocity: new THREE.Vector3(), axis: (i, o) => o.set(Math.sin(g.onFoot.yaw), 0, Math.cos(g.onFoot.yaw)) }, speed: 0 } : null;
+    if (!g.onFoot) return null;
+    // a stand-in "car" for the player on foot, reused every call
+    this.footTarget ||= { body: { position: g.onFoot.position, velocity: new THREE.Vector3(), axis: (i, o) => o.set(Math.sin(g.onFoot.yaw), 0, Math.cos(g.onFoot.yaw)) }, speed: 0 };
+    this.footTarget.body.position = g.onFoot.position;
+    return this.footTarget;
   }
 
   makeCop(heavy, pos, yaw, unmarked = false) {
@@ -480,13 +484,15 @@ export class PoliceManager {
       if (nl.seg.closed && car.speed > 4) {
         this.wrongWay = (this.wrongWay || 0) + dt;
         if (this.wrongWay > 2.5) this.offense('wrongway');
-      }
+      } else if (!nl.seg.closed) this.wrongWay = 0;
       this.lastSeg = nl.seg;
       this.lastDist = nl.dist;
     } else {
       // no lane in our direction: are we on the wrong side of a road?
       const any = g.city.nearestLane(p);
-      if (any && car.speed > 6 && g.city.onRoad(p.x, p.z)) {
+      if (g.city.inJunction(p.x, p.z)) {
+        // crossing a junction box: no lane has a clear direction, so don't judge
+      } else if (any && car.speed > 6 && g.city.onRoad(p.x, p.z)) {
         this.wrongWay = (this.wrongWay || 0) + dt;
         if (this.wrongWay > 3) this.offense('wrongway');
       } else this.wrongWay = 0;
@@ -745,6 +751,7 @@ export class PoliceManager {
       el.addEventListener('mousedown', (e) => e.stopPropagation());
     }
     el.classList.remove('hidden');
+    document.body.classList.add('stopdlg');
     el.innerHTML = `<div class="who">👮 Officer</div><div class="txt">${text}</div>${choices.map(([k, label, id]) => `<button data-id="${id}"><kbd>${k}</kbd> ${label}</button>`).join('')}`;
     el.querySelectorAll('button').forEach((b) => (b.onclick = () => this.stop && (this.stop.click = b.dataset.id)));
     if (choices.length) this.game.input.unlock();
@@ -753,6 +760,7 @@ export class PoliceManager {
   endStop() {
     const el = document.getElementById('stop-dialog');
     if (el) el.classList.add('hidden');
+    document.body.classList.remove('stopdlg');
     const st = this.stop;
     this.stop = null;
     if (st?.officer) st.officer.t = Math.min(st.officer.t, 6);
@@ -857,7 +865,9 @@ export class PoliceManager {
     const sp = g.city.lanePoint(seg, 0, d - 25);
     const a = sp.clone().addScaledVector(seg.right, -0.5);
     const b = sp.clone().addScaledVector(seg.right, CITY.RW / 2);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(CITY.RW / 2 + 0.5, 0.05, 0.4), new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.5 }));
+    this.spikeGeo ||= new THREE.BoxGeometry(CITY.RW / 2 + 0.5, 0.05, 0.4);
+    this.spikeMat ||= new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.5 });
+    const mesh = new THREE.Mesh(this.spikeGeo, this.spikeMat);
     mesh.position.copy(a).lerp(b, 0.5);
     mesh.position.y = 0.03;
     mesh.rotation.y = Math.atan2(seg.dir.x, seg.dir.z);

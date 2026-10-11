@@ -338,7 +338,14 @@ export function signTexture(text, bg = '#1c6b3a', fg = '#ffffff') {
     ctx.lineWidth = 3;
     ctx.strokeRect(4, 4, w - 8, h - 8);
     ctx.fillStyle = fg;
-    ctx.font = 'bold 30px sans-serif';
+    // long names shrink to fit inside the border
+    let px = 30;
+    ctx.font = `bold ${px}px sans-serif`;
+    const tw = ctx.measureText(text).width;
+    if (tw > w - 24) {
+      px = Math.max(12, Math.floor((px * (w - 24)) / tw));
+      ctx.font = `bold ${px}px sans-serif`;
+    }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, w / 2, h / 2 + 2);

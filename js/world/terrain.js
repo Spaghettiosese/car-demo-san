@@ -798,6 +798,7 @@ export class Terrain {
     ball.translate(0, 3.6, 0);
     const round = mergeGeos([[trunk, 0x5a4330], [ball, 0x5a7d38]]);
     const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+    this.treeMat = treeMat; // snow frosts it
     // trees sway in the wind (vertex shader: bend increases with height)
     this.windUniforms = { uWindT: { value: 0 }, uWind: { value: new THREE.Vector2() } };
     treeMat.onBeforeCompile = (sh) => {

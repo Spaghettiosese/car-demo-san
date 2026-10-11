@@ -466,6 +466,7 @@ export class Driver {
     const car = this.car;
     if (car.removed) return;
     this.honkCd -= dt;
+    if (this.flashCd > 0) this.flashCd -= dt;
     this.speechCd -= dt;
     this.anger = Math.max(0, this.anger - dt * 0.012);
     const env = this.game.env;
@@ -1167,12 +1168,16 @@ export class TrafficManager {
 
   setDensity(n) {
     const g = this.game;
-    while (this.drivers.length > n) {
-      const d = this.drivers.pop();
+    // buses and other scripted drivers (noRecycle) don't count and are never culled here
+    const regular = () => this.drivers.filter((d) => !d.noRecycle);
+    const list = regular();
+    while (list.length > n) {
+      const d = list.pop();
+      this.drivers.splice(this.drivers.indexOf(d), 1);
       g.removeCar(d.car);
     }
     let tries = 0;
-    while (this.drivers.length < n && tries++ < n * 4) this.spawnDriver(true);
+    while (regular().length < n && tries++ < n * 4) this.spawnDriver(true);
   }
 
   makeNpc(taxi) {
@@ -1256,6 +1261,8 @@ export class TrafficManager {
   update(dt) {
     const g = this.game;
     const focus = g.player.focus;
+    // a driver whose car was taken out of the world elsewhere has nothing left to drive
+    for (let i = this.drivers.length - 1; i >= 0; i--) if (this.drivers[i].car.removed) this.drivers.splice(i, 1);
     for (const d of this.drivers) {
       const car = d.car;
       const dist = car.body.position.distanceTo(focus);
@@ -1313,7 +1320,8 @@ export class TrafficManager {
     this.densityT = 2.5;
     const want = Math.round(g.settings.traffic * (g.settings.trafficByTime === false ? 1 : this.densityFactor()));
     const focus = g.player.focus;
-    if (this.drivers.length > want + 1) {
+    const count = this.drivers.reduce((k, d) => k + (d.noRecycle ? 0 : 1), 0);
+    if (count > want + 1) {
       // retire someone far away and out of sight
       const i = this.drivers.findIndex((d) => d.state === 'drive' && !d.noRecycle && d.car.body.position.distanceTo(focus) > 160 && !this.visible(d.car.body.position));
       if (i >= 0) {
@@ -1321,7 +1329,7 @@ export class TrafficManager {
         this.drivers.splice(i, 1);
         g.removeCar(d.car);
       }
-    } else if (this.drivers.length < want) this.spawnDriver(false);
+    } else if (count < want) this.spawnDriver(false);
   }
 
   /** Now and then a parked car (not a police one) gets a driver and pulls out into traffic. */
@@ -1356,6 +1364,22 @@ export class TrafficManager {
       if (d.onApology()) calmed++;
     }
     if (calmed) this.game.toast('🙏 Apology accepted', 'good', 2);
+  }
+
+  /** Flash-to-pass: the car dawdling ahead in your lane moves over if it can. */
+  onPlayerFlash(pc) {
+    pc.body.axis(2, _fwd);
+    let best = null, bd = 35;
+    for (const d of this.drivers) {
+      if (d.state !== 'drive' || d.noRecycle || d.car.police || d.car.service) continue;
+      const rel = _v.copy(d.car.body.position).sub(pc.body.position);
+      const dist = rel.length();
+      if (dist < bd && rel.dot(_fwd) / dist > 0.9 && Math.abs(d.car.body.velocity.dot(_fwd)) > 0.5) [best, bd] = [d, dist];
+    }
+    if (!best || best.flashCd > 0) return;
+    best.flashCd = 8;
+    if (best.persona === 'racer' || best.aggression > 0.8) best.say?.(['Flash all you want.', 'Go around!'][Math.floor(Math.random() * 2)], 'npc');
+    else best.overtakeAround();
   }
 
   onPlayerHorn() {

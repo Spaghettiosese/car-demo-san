@@ -84,7 +84,7 @@ export class Ambient {
 
   // ------------------------------------------------------------ snow
   buildSnow() {
-    const n = 7000, box = 70;
+    const n = 12000, box = 70;
     const pos = new Float32Array(n * 3);
     const seed = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -107,12 +107,12 @@ export class Ambient {
           p.xz = mod(p.xz - uCam.xz + uBox * 0.5, uBox) + uCam.xz - uBox * 0.5;
           p.y += uCam.y - uBox * 0.18;
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          gl_PointSize = clamp((2.5 + seed * 3.0) * 90.0 / -mv.z, 1.0, 14.0);
+          gl_PointSize = clamp((1.1 + seed * 1.5) * 90.0 / -mv.z, 1.0, 7.0);
           vA = clamp(1.0 - (-mv.z) / (uBox * 0.6), 0.0, 1.0);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `uniform float uAlpha, uBright; varying float vA;
-        void main() { vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard; gl_FragColor = vec4(vec3(uBright), (1.0 - d * 4.0) * uAlpha * vA); }`,
+        void main() { vec2 c = gl_PointCoord - 0.5; float d = dot(c, c); if (d > 0.25) discard; gl_FragColor = vec4(vec3(uBright), sqrt(1.0 - d * 4.0) * uAlpha * vA); }`,
       transparent: true,
       depthWrite: false,
     });
@@ -142,6 +142,9 @@ export class Ambient {
     if (cover > 0.01 || this.lastCover > 0.01) {
       for (const e of g.city.wetMats) e.mat.color.lerp(this.snowColor, cover * 0.62);
       if (g.terrain?.material) g.terrain.material.color.setRGB(1, 1, 1).lerp(this.snowColor, cover * 0.75);
+      // frosted trees and white roofs
+      if (g.terrain?.treeMat) g.terrain.treeMat.color.setRGB(1, 1, 1).lerp(this.snowColor, cover * 0.45);
+      for (const m of g.city.roofMats || []) m.color.setRGB(1, 1, 1).lerp(this.snowColor, cover * 0.7);
     }
     this.lastCover = cover;
   }
@@ -257,7 +260,9 @@ export class Ambient {
       g.rotation.y = yaw;
       this.scene.add(g);
       this.game.world.addCylinder(x, z, 0.35, gy, gy + 7, { kind: 'pole' });
-      this.boards.push({ c, ctx: c.getContext('2d'), tex, mat, ad: i % ADS.length, t: Math.random() * 6, g });
+      const b = { c, ctx: c.getContext('2d'), tex, mat, ad: i % ADS.length, t: 2 + Math.random() * 3, g };
+      this.boards.push(b);
+      this.drawBoard(b); // never a blank panel, even before it animates
     });
   }
 
@@ -297,17 +302,21 @@ export class Ambient {
 
   updateBillboards(dt, cam) {
     const night = this.game.env.night;
-    this.boardT = (this.boardT || 0) - dt;
+    // real time, so the ads keep playing in photo mode and replays (where the sim is paused)
+    const now = performance.now() / 1000;
+    const rdt = Math.min(0.25, now - (this.boardClock ?? now));
+    this.boardClock = now;
+    this.boardT = (this.boardT || 0) - rdt;
     const redraw = this.boardT <= 0;
     if (redraw) this.boardT = 0.1;
     for (const b of this.boards) {
-      b.t += dt;
+      b.t += rdt;
       if (b.t > 6) {
         b.t = 0;
         b.ad = (b.ad + 1) % ADS.length;
       }
       b.mat.emissiveIntensity = 0.2 + night * 1.1;
-      if (redraw && b.g.position.distanceToSquared(cam) < 260 * 260) this.drawBoard(b);
+      if (redraw && b.g.position.distanceToSquared(cam) < 600 * 600) this.drawBoard(b);
     }
   }
 
@@ -554,9 +563,12 @@ export class Ambient {
     if (this.newsT <= 0 && !this.news && g.env.night < 0.5) {
       import('../ai/heli.js').then(({ PoliceHeli }) => {
         if (this.news) return;
-        const h = new PoliceHeli(g, { color: 0xc8102e, searchlight: false, quiet: true });
+        // one news helicopter, reused for every flight
+        const h = (this.newsHeli ||= new PoliceHeli(g, { color: 0xc8102e, searchlight: false, quiet: true }));
         h.active = true;
+        h.leaving = false;
         h.pos.set(cam.x + 500, 140, cam.z + 300);
+        h.vel.set(0, 0, 0);
         h.root.visible = true;
         this.news = { h, t: 70 };
         g.hud.notify?.('📺 Channel 9 SkyCam', 'The news helicopter is over downtown', '', 3);
@@ -570,11 +582,7 @@ export class Ambient {
       const pc = g.player.car;
       const watch = g.police && g.police.heat > 0 && pc ? pc.body.position : _v.set(0, 60, 0);
       n.h.update(dt, n.h.leaving ? null : watch);
-      if (!n.h.active) {
-        n.h.root.removeFromParent();
-        n.h.beam.removeFromParent();
-        this.news = null;
-      }
+      if (!n.h.active) this.news = null;
     }
   }
 

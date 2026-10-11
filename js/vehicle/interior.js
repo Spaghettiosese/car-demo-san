@@ -649,8 +649,8 @@ export class Interior {
       ws.group.add(this.wsOverlay);
     }
 
-    // phone on a dash mount, right of the cluster
-    if (this.game.phone && this.game.phone.mountTex) {
+    // phone on a dash mount, right of the cluster (not in the 1960s classic)
+    if (this.game.phone && this.game.phone.mountTex && car.cfg.body !== 'classic') {
       const pm = new THREE.Group();
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.13, 0.009), mat(0x111111, 0.4, 0.3));
       const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.068, 0.12), new THREE.MeshBasicMaterial({ map: this.game.phone.mountTex }));
@@ -950,7 +950,8 @@ export class Interior {
     }
     // interactions
     this.updateHover(input, cockpit);
-    // displays at ~30 Hz
+    // displays at ~30 Hz, and only when you can see them (the cockpit cameras)
+    if (!cockpit) return;
     this.frame = (this.frame || 0) + 1;
     if (this.frame % 2 === 0) {
       this.drawCluster();
@@ -1223,6 +1224,32 @@ export class Interior {
     this.clusterTex.needsUpdate = true;
   }
 
+  /** The classic's radio: a glowing tuning dial with a needle, no touchscreen. */
+  drawVintageRadio(ctx, W, H) {
+    const st = this.game.audio?.radio?.stationInfo?.() || { name: 'OFF', freq: '' };
+    const on = st.name !== 'OFF';
+    ctx.fillStyle = '#2a1f14';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = on ? '#e9b45a' : '#5a4630';
+    ctx.fillRect(30, 90, W - 60, 120);
+    ctx.fillStyle = '#2a1f14';
+    ctx.font = '700 22px serif';
+    ctx.textAlign = 'center';
+    for (let k = 0; k <= 10; k++) {
+      const x = 50 + (k * (W - 100)) / 10;
+      ctx.fillRect(x - 1, 100, 2, k % 2 ? 18 : 30);
+      if (k % 2 === 0) ctx.fillText(String(88 + k * 2), x, 160);
+    }
+    const f = parseFloat(st.freq) || 98;
+    const nx = 50 + ((Math.min(108, Math.max(88, f)) - 88) / 20) * (W - 100);
+    ctx.fillStyle = '#c0281e';
+    ctx.fillRect(nx - 2, 94, 4, 112);
+    ctx.fillStyle = on ? '#f3d9a8' : '#7a6a55';
+    ctx.font = 'italic 700 26px serif';
+    ctx.fillText(on ? st.name : 'RADIO', W / 2, 260);
+    this.screenTex.needsUpdate = true;
+  }
+
   drawScreen() {
     const ctx = this.screenCtx;
     const W = 512, H = 320;
@@ -1234,6 +1261,7 @@ export class Interior {
       this.screenTex.needsUpdate = true;
       return;
     }
+    if (car.cfg.body === 'classic') return this.drawVintageRadio(ctx, W, H);
     // mini map on the right
     const hud = this.game.hud;
     if (hud.mapCache) {
