@@ -197,7 +197,7 @@ export class Phone {
     };
     // services
     const L = g.city.locations;
-    for (const k2 of ['garage', 'gas', 'dealer', 'police', 'harbor', 'lookout', 'beach', 'pier', 'lighthouse', 'proving']) if (L[k2]) dot(L[k2].pos.x, L[k2].pos.z, '#4cd964', 4, L[k2].name);
+    for (const k2 of ['garage', 'gas', 'dealer', 'police', 'hospital', 'harbor', 'lookout', 'beach', 'pier', 'lighthouse', 'proving']) if (L[k2]) dot(L[k2].pos.x, L[k2].pos.z, '#4cd964', 4, L[k2].name);
     if (g.city.carWash) dot(g.city.carWash.x, g.city.carWash.z, '#4cd964', 4, 'Car wash');
     // events
     for (const a of g.activities ? g.activities.list() : []) if (a.start) dot(a.start.x, a.start.z, a.locked ? '#777' : '#ffd36a', 4, a.name);

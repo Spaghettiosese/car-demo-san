@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MATERIALS } from '../physics/world.js';
 import { mulberry32, clamp, lerp } from '../core/util.js';
 import {
-  asphaltTexture, sidewalkTexture, grassTexture, dirtTexture, concreteTexture, roofTexture,
+  asphaltTexture, trackTexture, sidewalkTexture, grassTexture, dirtTexture, concreteTexture, roofTexture,
   facadeTextures, FACADES, shopTexture, signTexture,
 } from './textures.js';
 
@@ -206,6 +206,11 @@ export class City {
 
   update(dt) {
     this.time += dt;
+    const cw = this.carWash;
+    if (cw && cw.spin > 0) {
+      cw.spin -= dt;
+      for (const b of cw.brushes) b.rotation.y += dt * 9;
+    }
   }
 
   /** Nearest lane position to p. Returns { seg, lane, dist, lateral, d2 }. */
@@ -295,10 +300,17 @@ export class City {
     this.wetMats.push({ mat: amat, dry: 0.92, wet: 0.25, dryColor: new THREE.Color(0xffffff), wetColor: new THREE.Color(0x9a9ca0) });
     const mb = new MeshBuilder(1);
     mb.flat(-CITY_HALF, -CITY_HALF, CITY_HALF, CITY_HALF, 0, 9);
-    mb.flat(CITY_HALF, PG.z0, PG.x1, PG.z1, 0, 9);
     const m = new THREE.Mesh(mb.build(), amat);
     m.receiveShadow = true;
     this.group.add(m);
+    // the proving grounds get a lighter, even test-track surface
+    const tmat = new THREE.MeshStandardMaterial({ map: trackTexture(), roughness: 0.88, metalness: 0, color: 0xffffff });
+    this.wetMats.push({ mat: tmat, dry: 0.88, wet: 0.25, dryColor: new THREE.Color(0xffffff), wetColor: new THREE.Color(0x9a9ca0) });
+    const pb = new MeshBuilder(1);
+    pb.flat(CITY_HALF, PG.z0, PG.x1, PG.z1, 0, 24);
+    const pm = new THREE.Mesh(pb.build(), tmat);
+    pm.receiveShadow = true;
+    this.group.add(pm);
   }
 
   // ------------------------------------------------------------ road markings
@@ -578,6 +590,7 @@ export class City {
       world.addBox(cx - 1, 0, cz - 1, cx + 1, CURB + 6, cz + 1, { kind: 'wall' });
       b.fountain = new THREE.Vector3(cx, CURB + 0.9, cz);
       addBuilding(ix0, iz1 - 20, ix1, iz1, 22, 'office', { shops: ['s'] });
+      this.buildHospital(ix0, iz1 - 20, ix1, iz1, 22);
       b.trees = [];
       for (let k = 0; k < 8; k++) b.trees.push([cx + Math.cos(k * 0.785) * 18, cz + Math.sin(k * 0.785) * 18]);
       return;
@@ -624,6 +637,7 @@ export class City {
       this.signBoard(cx - 22, cz - 12, 'EV CHARGE', '#1b6fa8', 4, 3.2);
       addBuilding(ix0 + 10, iz1 - 16, ix1 - 10, iz1 - 2, 5, 'modern', { base: 0, shops: ['s'] });
       this.signBoard(cx + 30, cz - 32, 'FUEL STOP', '#c21f1f', 8);
+      this.buildCarWash(cx + 28, cz - 12);
     } else if (b.type === 'garage') {
       this.locations.garage = { pos: new THREE.Vector3(cx, 0, cz - 8), yaw: Math.PI, name: 'San Demo Customs' };
       // workshop with an open bay facing south
@@ -684,6 +698,75 @@ export class City {
       this.group.add(pole);
       this.world.addCylinder(x, z, 0.2, 0, h, { kind: 'pole' });
     }
+  }
+
+  /** San Demo General: the plaza office block gets a hospital front, a helipad and an ambulance bay. */
+  buildHospital(x0, z0, x1, z1, h) {
+    const cx = (x0 + x1) / 2;
+    const t = signTexture('SAN DEMO GENERAL', '#b3141b');
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(26, 6.5), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.3 }));
+    sign.position.set(cx, h - 4, z1 + 0.08);
+    this.group.add(sign);
+    this.nightMats.push({ mat: sign.material, max: 1.4, min: 0.3 });
+    // red cross lightbox
+    const red = new THREE.MeshStandardMaterial({ color: 0xd11f2a, emissive: 0xd11f2a, emissiveIntensity: 0.5 });
+    this.nightMats.push({ mat: red, max: 1.6, min: 0.5 });
+    for (const [w, hh] of [[1.2, 4], [4, 1.2]]) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(w, hh, 0.3), red);
+      c.position.set(cx - 18, h - 4, z1 + 0.2);
+      this.group.add(c);
+    }
+    // helipad on the roof
+    const pad = new THREE.Mesh(new THREE.CircleGeometry(7, 28), new THREE.MeshStandardMaterial({ map: signTexture('H', '#2b2f36'), roughness: 0.8 }));
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.set(cx + 20, h + 0.06, (z0 + z1) / 2);
+    this.group.add(pad);
+    // ambulance bay: painted box on the road in front, under a canopy
+    const bay = new THREE.Mesh(new THREE.PlaneGeometry(10, 4), new THREE.MeshBasicMaterial({ color: 0xd11f2a, transparent: true, opacity: 0.35, depthWrite: false }));
+    bay.rotation.x = -Math.PI / 2;
+    bay.position.set(55, 0.03, -224.8);
+    this.group.add(bay);
+    this.locations.hospital = { pos: new THREE.Vector3(55, 0, -224.8), yaw: -Math.PI / 2, name: 'San Demo General' };
+  }
+
+  /** Drive-through car wash: two walls, a roof and spinning brushes. */
+  buildCarWash(cx, cz) {
+    const L = 15, W = 7, H = 4.2;
+    const z0 = cz - L / 2, z1 = cz + L / 2;
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x2e7fd1, roughness: 0.5, metalness: 0.2 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xe8edf2, roughness: 0.6 });
+    for (const sx of [-1, 1]) {
+      const x = cx + sx * (W / 2 + 0.3);
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.6, H, L), wallMat);
+      wall.position.set(x, H / 2, cz);
+      wall.castShadow = true;
+      this.group.add(wall);
+      this.world.addBox(x - 0.3, 0, z0, x + 0.3, H, z1, { kind: 'wall' });
+    }
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(W + 1.2, 0.4, L + 0.6), roofMat);
+    roof.position.set(cx, H + 0.2, cz);
+    roof.castShadow = true;
+    this.group.add(roof);
+    const t = signTexture('SPARKLE WASH $25', '#2e7fd1');
+    for (const z of [z0 - 0.35, z1 + 0.35]) {
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(W + 1, (W + 1) / 4), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.3 }));
+      sign.position.set(cx, H - 0.6, z);
+      if (z < cz) sign.rotation.y = Math.PI; // face outwards at both ends
+      this.group.add(sign);
+      this.nightMats.push({ mat: sign.material, max: 1.2, min: 0.3 });
+    }
+    // brushes: two vertical rollers on the sides and one overhead, soft (no collision)
+    const brushMat = new THREE.MeshStandardMaterial({ color: 0x1fa2ff, roughness: 1 });
+    const brushes = [];
+    for (const [x, y, z, rx] of [[cx - 2.4, 1.8, cz - 2, 0], [cx + 2.4, 1.8, cz - 2, 0], [cx, 3.4, cz + 2.5, 1]]) {
+      const geo = new THREE.CylinderGeometry(0.55, 0.55, rx ? W - 0.6 : 3.4, 10, 1, true);
+      const m = new THREE.Mesh(geo, brushMat);
+      m.position.set(x, y, z);
+      if (rx) m.rotation.z = Math.PI / 2;
+      this.group.add(m);
+      brushes.push(m);
+    }
+    this.carWash = { x: cx, z: cz, x0: cx - W / 2, x1: cx + W / 2, z0, z1, brushes, spin: 0 };
   }
 
   /** Visible + physical ramp. */

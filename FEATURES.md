@@ -132,7 +132,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F123 Underglow animation modes
 - [x] F124 Brake caliper colour
 - [x] F125 Dirt that builds up on the car; washing it off
-- [ ] F126 Car wash in the city
+- [x] F126 Car wash in the city
 - [x] F127 Live price preview in the paint shop
 - [x] F128 Sell cars at the dealership
 - [x] F129 Test drives at the dealership
@@ -155,8 +155,8 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F144 Car loans
 - [x] F145 Achievements with toasts
 - [x] F146 Career stats page
-- [ ] F147 Bronze / silver / gold medals per event
-- [ ] F148 Local leaderboards per event
+- [x] F147 Bronze / silver / gold medals per event
+- [x] F148 Local leaderboards per event
 - [x] F149 Driving licence points; too many offences suspend it
 - [x] F150 A suspended licence has consequences (higher heat, no jobs)
 - [x] F151 Roadside mechanic call
@@ -171,46 +171,46 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F160 Fast travel to the garage (taxi fee)
 
 ## E. Activities (161–200)
-- [ ] F161 Activity framework: markers, start card, countdown, objective panel, results
-- [ ] F162 Taxi jobs with passenger comfort rating and tips
-- [ ] F163 Courier deliveries against the clock
-- [ ] F164 Fragile Freight (g-force-limited cargo)
-- [ ] F165 Downtown Sprint (checkpoint race against AI)
-- [ ] F166 Canyon Run (point-to-point race against AI)
-- [ ] F167 Coast Highway time trial
-- [ ] F168 Harbor Circuit lap race
-- [ ] F169 Quarter Mile Duel against AI
-- [ ] F170 Drift Trial (scored)
-- [ ] F171 Demolition Derby arena
-- [ ] F172 Cop Duty: drive a cruiser and stop fleeing suspects
-- [ ] F173 Heat Run: survive the police for a set time
-- [ ] F174 Valet Parking: park precisely against the clock
-- [ ] F175 Crash Test sandbox tool (set the speed, auto-drive into the wall, get a report)
-- [ ] F176 Eight speed traps with records
-- [ ] F177 Speed cameras that fine you
-- [ ] F178 Eight stunt jumps with distance records
-- [ ] F179 Free-roam drift scoring with combos
-- [ ] F180 Near-miss scoring
-- [ ] F181 Airtime scoring
-- [ ] F182 Red-light street races against boy-racers
-- [ ] F183 Canyon hill-climb time attack
-- [ ] F184 Eco challenge (fuel-efficient drive)
-- [ ] F185 Ambulance run (deliver a patient smoothly)
-- [ ] F186 Forest rally stage on a dirt trail
-- [ ] F187 Quick event restart key
-- [ ] F188 Ghost car of your best run
-- [ ] F189 Race position and lap counter on the HUD
-- [ ] F190 Countdown lights and false-start detection
-- [ ] F191 Rewards scaled by difficulty
-- [ ] F192 AI difficulty setting
-- [ ] F193 Named rival drivers with personalities
-- [ ] F194 Wager races
-- [ ] F195 25 hubcap collectibles
-- [ ] F196 Photo challenges at scenic spots
-- [ ] F197 Daily challenge (seeded by date)
-- [ ] F198 Slalom challenge at the Proving Grounds
-- [ ] F199 Pursuit recap screen after a chase
-- [ ] F200 Event markers on the map with a GPS route
+- [x] F161 Activity framework: markers, start card, countdown, objective panel, results
+- [x] F162 Taxi jobs with passenger comfort rating and tips
+- [x] F163 Courier deliveries against the clock
+- [x] F164 Fragile Freight (g-force-limited cargo)
+- [x] F165 Downtown Sprint (checkpoint race against AI)
+- [x] F166 Canyon Run (point-to-point race against AI)
+- [x] F167 Coast Highway time trial
+- [x] F168 Harbor Circuit lap race
+- [x] F169 Quarter Mile Duel against AI
+- [x] F170 Drift Trial (scored)
+- [x] F171 Demolition Derby arena
+- [x] F172 Cop Duty: drive a cruiser and stop fleeing suspects
+- [x] F173 Heat Run: survive the police for a set time
+- [x] F174 Valet Parking: park precisely against the clock
+- [x] F175 Crash Test sandbox tool (set the speed, auto-drive into the wall, get a report)
+- [x] F176 Eight speed traps with records
+- [x] F177 Speed cameras that fine you
+- [x] F178 Eight stunt jumps with distance records
+- [x] F179 Free-roam drift scoring with combos
+- [x] F180 Near-miss scoring
+- [x] F181 Airtime scoring
+- [x] F182 Red-light street races against boy-racers
+- [x] F183 Canyon hill-climb time attack
+- [x] F184 Eco challenge (fuel-efficient drive)
+- [x] F185 Ambulance run (deliver a patient smoothly)
+- [x] F186 Forest rally stage on a dirt trail
+- [x] F187 Quick event restart key
+- [x] F188 Ghost car of your best run
+- [x] F189 Race position and lap counter on the HUD
+- [x] F190 Countdown lights and false-start detection
+- [x] F191 Rewards scaled by difficulty
+- [x] F192 AI difficulty setting
+- [x] F193 Named rival drivers with personalities
+- [x] F194 Wager races
+- [x] F195 25 hubcap collectibles
+- [x] F196 Photo challenges at scenic spots
+- [x] F197 Daily challenge (seeded by date)
+- [x] F198 Slalom challenge at the Proving Grounds
+- [x] F199 Pursuit recap screen after a chase
+- [x] F200 Event markers on the map with a GPS route
 
 ## F. World and environment (201–240)
 - [x] F201 Terrain with hills and mountains
@@ -226,7 +226,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F211 Forests
 - [x] F212 Rocks and boulders
 - [x] F213 Distance LOD for terrain and cars
-- [ ] F214 Dirt rally trail in the hills
+- [x] F214 Dirt rally trail in the hills
 - [ ] F215 Four-way stop intersections
 - [ ] F216 Speed bumps
 - [ ] F217 Potholes and manhole covers

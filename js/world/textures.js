@@ -29,6 +29,34 @@ function grain(ctx, w, h, amount, seed = 1, scale = 1) {
   ctx.putImageData(img, 0, 0);
 }
 
+/** Proving-ground surface: lighter, finer, even asphalt with faint slab seams (no blotches). */
+export function trackTexture() {
+  return tex('track', 512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#56585c';
+    ctx.fillRect(0, 0, w, h);
+    grain(ctx, w, h, 22, 11, 3);
+    ctx.strokeStyle = 'rgba(30,30,32,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 1);
+    ctx.lineTo(w, 1);
+    ctx.moveTo(1, 0);
+    ctx.lineTo(1, h);
+    ctx.stroke();
+    const rnd = mulberry32(5);
+    for (let i = 0; i < 14; i++) {
+      // faint tyre marks
+      ctx.strokeStyle = `rgba(20,20,22,${0.05 + rnd() * 0.08})`;
+      ctx.lineWidth = 6 + rnd() * 6;
+      ctx.beginPath();
+      const y0 = rnd() * h;
+      ctx.moveTo(0, y0);
+      ctx.bezierCurveTo(w * 0.3, y0 + (rnd() - 0.5) * 80, w * 0.7, y0 + (rnd() - 0.5) * 80, w, y0 + (rnd() - 0.5) * 40);
+      ctx.stroke();
+    }
+  });
+}
+
 export function asphaltTexture() {
   return tex('asphalt', 512, 512, (ctx, w, h) => {
     ctx.fillStyle = '#3b3d40';

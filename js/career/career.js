@@ -192,6 +192,12 @@ export class Career {
     }
     p.loans = p.loans.filter((l) => l.principal > 0.5);
     if (p.licence.points > 0 && Math.random() < 0.5) p.licence.points--;
+    if (p.pendingFine > 0) {
+      // unpaid camera fines get a late fee and a point on the licence
+      p.pendingFine = Math.round(p.pendingFine * 1.5);
+      p.licence.points++;
+      this.message('SD Traffic Enforcement', `Your camera fine is overdue. A 50% late fee was added: ${fmtMoney(p.pendingFine)} now outstanding. Pay it from the Bank app.`);
+    }
     this.game.toast?.(`Day ${p.day}`, 'info', 2);
     this.game.activities?.newDay?.();
     this.dirty = true;

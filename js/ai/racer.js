@@ -278,6 +278,10 @@ export class DerbyDriver {
     car.body.sleeping = false;
     car.sys.ignition = 'on';
     const pt = car.phys.pt;
+    if (!pt.running && !car.wrecked && !this.out) {
+      pt.running = true;
+      pt.omega = 100;
+    }
     if (this.out || this.frozen) {
       car.phys.input.throttle = 0;
       car.phys.input.brake = this.frozen ? 1 : 0.3;

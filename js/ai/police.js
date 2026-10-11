@@ -174,6 +174,31 @@ export class PoliceManager {
     return this.game.settings.cops;
   }
 
+  /** Camera fines arrive by post and wait in the career profile until paid on the phone. */
+  get pendingFine() {
+    return this.game.career?.p.pendingFine || 0;
+  }
+  set pendingFine(v) {
+    const ca = this.game.career;
+    if (!ca) return;
+    ca.p.pendingFine = Math.max(0, Math.round(v));
+    ca.dirty = true;
+  }
+  payFine() {
+    const ca = this.game.career;
+    const f = this.pendingFine;
+    if (!ca || !f) return false;
+    if (!ca.charge(f, 'Speed camera fine')) {
+      this.game.toast('Not enough money to pay the fine', 'bad');
+      return false;
+    }
+    ca.p.stats.fines += f;
+    this.game.stats.fines += f;
+    this.pendingFine = 0;
+    this.game.toast('Fine paid. Thank you for driving safely.', 'good');
+    return true;
+  }
+
   targetCar() {
     const g = this.game;
     if (g.player.mode === 'car') return g.player.car;
@@ -263,7 +288,7 @@ export class PoliceManager {
   }
 
   offense(type, force = false) {
-    if (!this.enabled) return;
+    if (!this.enabled || (this.paused && !force)) return;
     if ((this.offenseCd[type] || 0) > 0) return;
     const cop = force ? this.cops[0] || true : this.seeingCop();
     if (!cop) return;
@@ -355,8 +380,10 @@ export class PoliceManager {
       this.updateHud();
       return;
     }
-    this.detectOffenses(dt, target);
-    this.updatePursuit(dt, target);
+    if (!this.paused || this.heat > 0) {
+      if (!this.paused) this.detectOffenses(dt, target);
+      this.updatePursuit(dt, target);
+    }
     this.updateSpikes(dt);
     this.updateHud();
   }
@@ -506,6 +533,8 @@ export class PoliceManager {
 
   bust() {
     const g = this.game;
+    this.bustCount = (this.bustCount || 0) + 1;
+    g.onPursuitEnd?.('busted', Math.floor(this.heat));
     const fine = 500 + Math.floor(this.heat) * 750;
     g.stats.fines += fine;
     if (g.career) {

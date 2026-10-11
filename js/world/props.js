@@ -347,6 +347,7 @@ export class Props {
   breakItem(it, car, point, normal, closing) {
     const k = it.def;
     it.broken = true;
+    if (it.kind === 'cone' && car && car.isPlayer) this.coneHits = (this.coneHits || 0) + 1;
     cy_remove(this.world, it);
     // hide instance
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -412,13 +413,19 @@ export class Props {
     if (this.poolMat) this.poolMat.opacity = f * 0.55;
   }
 
-  reset() {
+  /** Stand the cones back up (after a slalom run). */
+  resetCones() {
+    this.reset('cone');
+  }
+
+  reset(onlyKind = null) {
     // restore broken props (sandbox "reset world")
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3(1, 1, 1);
     for (const it of this.items) {
       if (!it.broken) continue;
+      if (onlyKind && it.kind !== onlyKind) continue;
       it.broken = false;
       it.cyl = this.world.addCylinder(it.x, it.z, it.def.r, it.y, it.y + it.def.h, { kind: it.kind, ref: { breakable: true, item: it } });
       this.T[it.kind].forEach(([, , local], k) => {

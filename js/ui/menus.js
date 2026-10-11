@@ -53,12 +53,48 @@ export class Menus {
     this.mapEl = document.getElementById('map-full');
     this.buildHelp();
     const mc = document.getElementById('map-canvas');
-    mc.addEventListener('mousedown', (e) => {
+    // drag to pan, wheel to zoom, click to set a waypoint
+    const toCanvas = (e) => {
       const r = mc.getBoundingClientRect();
-      const x = ((e.clientX - r.left) / r.width) * mc.width;
-      const y = ((e.clientY - r.top) / r.height) * mc.height;
-      if (e.button === 2) this.game.setWaypoint(null);
-      else if (this.game.hud.fullMapToWorld) this.game.setWaypoint(this.game.hud.fullMapToWorld(x, y));
+      return [((e.clientX - r.left) / r.width) * mc.width, ((e.clientY - r.top) / r.height) * mc.height, mc.width / r.width];
+    };
+    let drag = null;
+    mc.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const [x, y] = toCanvas(e);
+      this.game.hud.fullMapZoom?.(Math.pow(1.2, -Math.sign(e.deltaY)), x, y);
+    }, { passive: false });
+    mc.addEventListener('pointerdown', (e) => {
+      if (e.button === 0) drag = { x: e.clientX, y: e.clientY, moved: false };
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      drag.moved = true;
+      const k = toCanvas(e)[2];
+      this.game.hud.fullMapPan?.(dx * k, dy * k);
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+    });
+    window.addEventListener('pointerup', () => setTimeout(() => (drag = null), 0));
+    mc.addEventListener('mouseup', (e) => {
+      if (e.button === 0 && drag && drag.moved) return;
+      const [x, y] = toCanvas(e);
+      const g = this.game;
+      if (e.button === 2) g.setWaypoint(null);
+      else if (g.hud.fullMapToWorld) {
+        // clicking near an event or service icon snaps the GPS to it
+        const w = g.hud.fullMapToWorld(x, y);
+        const near = (g.activities?.defs || []).filter((d) => d.start && !d.hidden).map((d) => ({ name: d.name, pos: d.start }))
+          .concat(Object.values(g.city.locations).map((l) => ({ name: l.name, pos: l.pos })))
+          .map((o) => ({ ...o, d: Math.hypot(o.pos.x - w.x, o.pos.z - w.z) }))
+          .sort((a, b) => a.d - b.d)[0];
+        if (near && near.d < 30) {
+          g.setWaypoint(near.pos.clone());
+          g.toast(`GPS: ${near.name}`, 'info', 2);
+        } else g.setWaypoint(w);
+      }
     });
     mc.addEventListener('contextmenu', (e) => e.preventDefault());
     this.mapEl.addEventListener('mousedown', (e) => {
@@ -393,6 +429,7 @@ export class Menus {
     c.innerHTML = [
       this.row('Your car', `<button class="btn small" data-a="repair">Repair</button><button class="btn small" data-a="flip">Flip / recover</button><button class="btn small" data-a="refuel">Refuel</button><button class="btn small" data-a="invuln">${g.player.car?.invulnerable ? 'Damage: OFF' : 'Damage: ON'}</button>`),
       this.row('Teleport', Object.entries(locs).map(([k, l]) => `<button class="btn small" data-tp="${k}">${l.name}</button>`).join('')),
+      this.row('Crash test (Proving Grounds wall)', [30, 50, 64, 80, 120, 160].map((v) => `<button class="btn small" data-ct="${v}">${g.fmtSpeed ? g.fmtSpeed(v / 3.6) : v + ' km/h'}</button>`).join('')),
       this.row('Spawn in front of you', `<button class="btn small" data-sp="ramp">Ramp</button><button class="btn small" data-sp="car">Parked car</button><button class="btn small" data-sp="wall">Car wall (3)</button><button class="btn small" data-sp="cones">Cones</button><button class="btn small" data-sp="barrels">Barrels</button>`),
       this.row('Chaos', `<button class="btn small" data-a="launch">Launch me</button><button class="btn small" data-a="carrain">Car rain</button><button class="btn small" data-a="ragenear">Anger nearest driver</button>`),
       this.row('Wanted level', [0, 1, 2, 3, 4, 5].map((n) => `<button class="btn small" data-w="${n}">${n ? '★'.repeat(n) : 'Clear'}</button>`).join('')),
@@ -445,6 +482,10 @@ export class Menus {
     c.querySelectorAll('[data-sp]').forEach((b) => (b.onclick = () => {
       this.spawn(b.dataset.sp);
       this.closeAll();
+    }));
+    c.querySelectorAll('[data-ct]').forEach((b) => (b.onclick = () => {
+      this.closeAll();
+      g.crashTest(+b.dataset.ct);
     }));
     c.querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => {
       const n = +b.dataset.w;
@@ -694,6 +735,7 @@ export class Menus {
 
   openMap() {
     const g = this.game;
+    if (g.hud.mapView) g.hud.mapView.x = null; // re-centre on the player
     g.state = 'map';
     g.input.unlock();
     this.mapEl.classList.remove('hidden');

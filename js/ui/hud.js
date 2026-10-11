@@ -508,11 +508,18 @@ export class HUD {
     ctx.fillRect(X(PG.x0 - 12), Z(PG.z0), (PG.x1 - PG.x0 + 12) * sc, (PG.z1 - PG.z0) * sc);
     ctx.fillStyle = '#7f858f';
     for (const r of city.world.ramps) ctx.fillRect(X(r.cx) - 3, Z(r.cz) - 3, 6, 6);
+    // rotating maps (minimap, dash nav) use an unlabelled copy and draw labels upright themselves
+    const base = document.createElement('canvas');
+    base.width = c.width;
+    base.height = c.height;
+    base.getContext('2d').drawImage(c, 0, 0);
+    this.mapBase = base;
+    this.mapLabels = city.blocks.filter((b) => b.label).map((b) => ({ text: b.label, x: X((b.x0 + b.x1) / 2), z: Z((b.z0 + b.z1) / 2) }));
     // labels
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
-    for (const b of city.blocks) if (b.label) ctx.fillText(b.label, X((b.x0 + b.x1) / 2), Z((b.z0 + b.z1) / 2));
+    for (const l of this.mapLabels) ctx.fillText(l.text, l.x, l.z);
     ctx.fillText('PROVING GROUNDS', X((PG.x0 + PG.x1) / 2), Z(PG.z0 + 30));
     this.mapCache = c;
   }
@@ -540,8 +547,21 @@ export class HUD {
     const [mx, mz] = this.worldToMap(pos.x, pos.z);
     const k = zoom / this.mapScale;
     ctx.scale(k, k);
-    ctx.drawImage(this.mapCache, -mx, -mz);
+    ctx.drawImage(this.mapBase || this.mapCache, -mx, -mz);
     ctx.scale(1 / k, 1 / k);
+    // place labels, kept upright
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    for (const l of this.mapLabels || []) {
+      const dx = (l.x - mx) * k, dy = (l.z - mz) * k;
+      if (dx * dx + dy * dy > 95 * 95) continue;
+      ctx.save();
+      ctx.translate(dx, dy);
+      ctx.rotate(-(Math.PI + heading));
+      ctx.fillText(l.text, 0, 0);
+      ctx.restore();
+    }
     // dynamic markers
     const dot = (x, z, color, r = 3.5) => {
       const dx = (x - pos.x) * zoom, dz = (z - pos.z) * zoom;
@@ -557,6 +577,14 @@ export class HUD {
       if (c.police) dot(c.body.position.x, c.body.position.z, c.sirenOn ? (Math.floor(t * 4) % 2 ? '#ff3b3b' : '#3b7bff') : '#7aa8ff', 4.5);
       else if (c.controller && c.controller.rage) dot(c.body.position.x, c.body.position.z, '#ff8a2a', 4);
       else dot(c.body.position.x, c.body.position.z, 'rgba(220,220,220,0.7)', 2.5);
+    }
+    // event start markers nearby (hidden while an event runs)
+    if (g.activities && !g.activities.current) {
+      for (const d of g.activities.defs) {
+        if (!d.start || d.hidden || Math.abs(d.start.x - pos.x) > 140 || Math.abs(d.start.z - pos.z) > 140) continue;
+        dot(d.start.x, d.start.z, 'rgba(0,0,0,0.6)', 6);
+        dot(d.start.x, d.start.z, '#' + (d.color || 0xffd36a).toString(16).padStart(6, '0'), 4.5);
+      }
     }
     // waypoint + route
     if (g.gps && g.gps.route) {
@@ -602,11 +630,31 @@ export class HUD {
   drawFullMap(canvas, playerPos, heading) {
     const ctx = canvas.getContext('2d');
     const S = canvas.width;
+    const CW = this.mapCache.width;
+    // zoom / pan view (in map-cache pixels); opens centred on the player
+    const v = (this.mapView ||= { zoom: 2.2, x: null, y: null });
+    if (v.x === null) [v.x, v.y] = this.worldToMap(playerPos.x, playerPos.z);
+    const sw = CW / v.zoom;
+    v.x = clamp(v.x, sw / 2, CW - sw / 2);
+    v.y = clamp(v.y, sw / 2, CW - sw / 2);
+    const f = (S / CW) * v.zoom;
     ctx.clearRect(0, 0, S, S);
-    ctx.drawImage(this.mapCache, 0, 0, S, S);
+    ctx.drawImage(this.mapCache, v.x - sw / 2, v.y - sw / 2, sw, sw, 0, 0, S, S);
     const toC = (x, z) => {
       const [mx, mz] = this.worldToMap(x, z);
-      return [(mx / this.mapCache.width) * S, (mz / this.mapCache.height) * S];
+      return [(mx - v.x) * f + S / 2, (mz - v.y) * f + S / 2];
+    };
+    this.fullMapPan = (dx, dy) => {
+      v.x -= dx / f;
+      v.y -= dy / f;
+    };
+    this.fullMapZoom = (k, cx, cy) => {
+      // zoom about the cursor
+      const mx = (cx - S / 2) / f + v.x, my = (cy - S / 2) / f + v.y;
+      v.zoom = clamp(v.zoom * k, 1, 8);
+      const f2 = (S / CW) * v.zoom;
+      v.x = mx - (cx - S / 2) / f2;
+      v.y = my - (cy - S / 2) / f2;
     };
     const g = this.game;
     if (g.gps && g.gps.route) {
@@ -626,6 +674,38 @@ export class HUD {
       ctx.fillStyle = c.police ? '#5b8cff' : 'rgba(230,230,230,0.6)';
       ctx.fillRect(x - 2, y - 2, 4, 4);
     }
+    // services and events, as icons in a circle
+    const icon = (x, z, glyph, ring, label) => {
+      const [cx, cy] = toC(x, z);
+      ctx.fillStyle = 'rgba(12,14,18,0.85)';
+      ctx.strokeStyle = ring;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(glyph, cx, cy + 1);
+      if (label && v.zoom >= 1.8) {
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillText(label, cx, cy + 20);
+      }
+      ctx.textBaseline = 'alphabetic';
+    };
+    const L = g.city.locations;
+    const svc = { garage: '🔧', gas: '⛽', dealer: '🚗', hospital: '🏥', police: '🚓' };
+    for (const k in svc) if (L[k]) icon(L[k].pos.x, L[k].pos.z, svc[k], '#4cd964', L[k].name);
+    if (g.city.carWash) icon(g.city.carWash.x, g.city.carWash.z, '🫧', '#4cd964', 'Car wash');
+    if (g.activities) {
+      for (const a of g.activities.list()) {
+        if (!a.start) continue;
+        icon(a.start.x, a.start.z, a.icon || '🏁', a.locked ? '#666' : ['#ffd36a', '#cd7f32', '#c0c0c0', '#ffd700'][a.medal], a.locked ? `🔒 Lv ${a.level}` : a.name);
+      }
+    }
     const [px, py] = toC(playerPos.x, playerPos.z);
     ctx.save();
     ctx.translate(px, py);
@@ -639,7 +719,7 @@ export class HUD {
     ctx.fill();
     ctx.restore();
     this.fullMapToWorld = (cxp, cyp) => {
-      const mx = (cxp / S) * this.mapCache.width, my = (cyp / S) * this.mapCache.height;
+      const mx = (cxp - S / 2) / f + v.x, my = (cyp - S / 2) / f + v.y;
       return new THREE.Vector3(mx / this.mapScale + this.mapExt.x0, 0, my / this.mapScale + this.mapExt.z0);
     };
   }

@@ -1211,7 +1211,7 @@ export class Interior {
       const [mx, mz] = hud.worldToMap(car.body.position.x, car.body.position.z);
       const k = 1.3 / hud.mapScale;
       ctx.scale(k, k);
-      ctx.drawImage(hud.mapCache, -mx, -mz);
+      ctx.drawImage(hud.mapBase || hud.mapCache, -mx, -mz);
       ctx.restore();
       ctx.fillStyle = '#ff6a1f';
       ctx.beginPath();

@@ -3,7 +3,7 @@ import { MATERIALS } from '../physics/world.js';
 import { clamp, lerp, smoothstep, mulberry32, valueNoise } from '../core/util.js';
 import { makeCanvas, canvasTexture } from '../core/canvas.js';
 import { CITY_HALF, PG } from './city.js';
-import { asphaltTexture, signTexture } from './textures.js';
+import { asphaltTexture, signTexture, dirtTexture } from './textures.js';
 
 /**
  * The countryside around San Demo: a heightmap with hills, a mountain range
@@ -111,6 +111,16 @@ const ROADS = [
     hw: 4.6,
     centre: 'dashed',
     pts: [[220, 337], [220, 372], [240, 420], [318, 446], [480, 455], [640, 452], [792, 432], [880, 382], [918, 282], [906, 120], [918, -60], [906, -240], [862, -370], [772, -424], [620, -430], [470, -414], [330, -398], [248, -384], [222, -366], [220, -337]],
+  },
+  {
+    id: 'trail',
+    name: 'Forest Trail',
+    hw: 3.0,
+    centre: 'none',
+    surface: 'dirt',
+    grade: 0.14,
+    smooth: 18,
+    pts: [[-487, -238], [-530, -236], [-590, -222], [-648, -178], [-700, -96], [-752, -22], [-842, 34], [-918, 128], [-905, 236], [-836, 316], [-772, 372], [-744, 440], [-728, 500]],
   },
 ];
 
@@ -240,21 +250,47 @@ export class Terrain {
     const H = this.H;
     const best = new Float32Array(NG * NG).fill(1e9); // distance to the closest road centre
     const target = new Float32Array(NG * NG);
-    for (const def of ROADS) {
+    this.roadId = new Uint8Array(NG * NG);
+    for (const [ri, def] of ROADS.entries()) {
       const pts = catmull(def.pts, 1);
       const n = pts.length;
       const nat = new Float32Array(n);
       for (let i = 0; i < n; i++) nat[i] = this.rawHeight(pts[i].x, pts[i].z);
       // smooth, pin the ends to the city, limit the grade, smooth again
-      let h = smoothArr(smoothArr(nat, 45), 45);
+      const sm = def.smooth || 45;
+      let h = smoothArr(smoothArr(nat, sm), sm);
       const pin = (i) => {
         const p = pts[i];
         return FLAT.some((r) => rectDist(r, p.x, p.z) < 6);
       };
       for (let i = 0; i < n; i++) if (pin(i)) h[i] = 0;
-      const g = 0.095;
+      const g = def.grade || 0.095;
       for (let i = 1; i < n; i++) h[i] = clamp(h[i], h[i - 1] - g, h[i - 1] + g);
       for (let i = n - 2; i >= 0; i--) h[i] = clamp(h[i], h[i + 1] - g, h[i + 1] + g);
+      // branch roads meet the road they join at the same height
+      for (const end of [0, n - 1]) {
+        const pe = pts[end];
+        for (const other of this.roads) {
+          let bd = 400, by = null;
+          for (const q of other.pts) {
+            const d2 = (q.x - pe.x) ** 2 + (q.z - pe.z) ** 2;
+            if (d2 < bd) {
+              bd = d2;
+              by = q.y;
+            }
+          }
+          if (by !== null) {
+            h[end] = by;
+            const dir = end === 0 ? 1 : -1;
+            for (let k = 1; k < n; k++) {
+              const i = end + dir * k, pi = i - dir;
+              const lim = clamp(h[i], h[pi] - g, h[pi] + g);
+              if (lim === h[i]) break;
+              h[i] = lim;
+            }
+          }
+        }
+      }
       h = smoothArr(h, 12);
       for (let i = 0; i < n; i++) if (pin(i)) h[i] = 0;
       for (let i = 0; i < n; i++) pts[i].y = h[i];
@@ -285,6 +321,7 @@ export class Terrain {
             if (d - def.hw < best[idx]) {
               best[idx] = d - def.hw;
               target[idx] = p.y;
+              this.roadId[idx] = ri + 1;
             }
           }
         }
@@ -373,8 +410,11 @@ export class Terrain {
     out.nx = -dx * inv; out.ny = inv; out.nz = -dz * inv;
     const E = this.edge;
     const e = (E[k] * (1 - u) + E[k + 1] * u) * (1 - v) + (E[k + NG] * (1 - u) + E[k + NG + 1] * u) * v;
-    if (e < 0) out.mat = MATERIALS.asphalt;
-    else if (e < 1.4) out.mat = MATERIALS.gravel;
+    if (e < 1.4) {
+      const rid = this.roadId[(u < 0.5 ? i : i + 1) + (v < 0.5 ? j : j + 1) * NG];
+      const dirt = rid && this.roads[rid - 1].surface === 'dirt';
+      out.mat = e < 0 ? (dirt ? MATERIALS.dirt : MATERIALS.asphalt) : MATERIALS.gravel;
+    }
     else out.mat = M[this.mat[(u < 0.5 ? i : i + 1) + (v < 0.5 ? j : j + 1) * NG]] || MATERIALS.grass;
     return out;
   }
@@ -516,9 +556,12 @@ export class Terrain {
     const white = new THREE.MeshStandardMaterial({ color: 0xe8e6de, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
     const yellow = new THREE.MeshStandardMaterial({ color: 0xe8b21e, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
     this.wetMats.push({ mat: white, dry: 0.7, wet: 0.2, dryColor: new THREE.Color(0xe8e6de), wetColor: new THREE.Color(0xbcbab2) });
+    const dmat = new THREE.MeshStandardMaterial({ map: dirtTexture(), roughness: 1, color: 0xc8b9a2, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    this.wetMats.push({ mat: dmat, dry: 1, wet: 0.5, dryColor: new THREE.Color(0xc8b9a2), wetColor: new THREE.Color(0x7d7062) });
     for (const r of this.roads) {
       const { pts, right, s, hw } = r;
       const n = pts.length;
+      const dirt = r.surface === 'dirt';
       // ribbon (sampled from the physics surface so wheels and mesh agree)
       const offs = [-hw - 0.4, -hw, -hw * 0.5, 0, hw * 0.5, hw, hw + 0.4];
       const pos = [], uv = [], idx = [];
@@ -546,9 +589,10 @@ export class Terrain {
       geo.setIndex(idx);
       geo.computeVertexNormals();
       fixWinding(geo);
-      const mesh = new THREE.Mesh(geo, amat);
+      const mesh = new THREE.Mesh(geo, dirt ? dmat : amat);
       mesh.receiveShadow = true;
       this.group.add(mesh);
+      if (dirt) continue;
       // markings
       const wb = [], yb = [];
       const strip = (arr, i0, i1, off, w) => {
@@ -584,6 +628,7 @@ export class Terrain {
     const posts = [];
     const rails = [];
     for (const r of this.roads) {
+      if (r.surface === 'dirt') continue;
       const { pts, right, hw } = r;
       const n = pts.length;
       for (const side of [-1, 1]) {
@@ -889,8 +934,8 @@ export class Terrain {
         const off = r.hw + 3;
         const x = p.x + rt.x * off * sgn, z = p.z + rt.z * off * sgn;
         const yaw = Math.atan2(d.x * sgn, d.z * sgn) + Math.PI;
-        const label = r.id === 'canyon' ? 'CANYON RD · DEMO PEAK' : 'COAST HWY · BEACH';
-        this.sign(x, z, this.rawHeight(x, z), label, r.id === 'canyon' ? '#1c6b3a' : '#1b4f8a', 7, yaw, 2.6);
+        const label = r.id === 'canyon' ? 'CANYON RD · DEMO PEAK' : r.id === 'trail' ? 'FOREST TRAIL · 4x4 ONLY' : 'COAST HWY · BEACH';
+        this.sign(x, z, this.rawHeight(x, z), label, r.id === 'canyon' ? '#1c6b3a' : r.id === 'trail' ? '#6b4a1c' : '#1b4f8a', 7, yaw, 2.6);
       }
     }
   }

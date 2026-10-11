@@ -876,6 +876,24 @@ export class TrafficManager {
     return drv;
   }
 
+  /** Hand a car that an activity borrowed back to normal traffic on the nearest lane. */
+  adopt(car) {
+    const g = this.game;
+    if (!car || car.removed) return;
+    const nl = g.city.nearestLane(car.body.position, car.body.axis(2, _v));
+    if (!nl) return;
+    let drv = car.controller instanceof Driver ? car.controller : null;
+    if (!drv) {
+      drv = new Driver(car, this);
+      car.controller = drv;
+    }
+    drv.state = 'drive';
+    drv.anger = 0;
+    drv.kinV = Math.max(0, car.forwardSpeed);
+    drv.placeOnLane(nl.seg, nl.lane, nl.dist);
+    if (!this.drivers.includes(drv)) this.drivers.push(drv);
+  }
+
   visible(p) {
     const cam = this.game.camera;
     _v.copy(p).sub(cam.position);

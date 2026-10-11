@@ -192,6 +192,11 @@ export class Game {
     if (dealer) this.dealer = new dealer.Dealer(this);
     const phone = await tryImport('./ui/phone.js');
     if (phone) this.phone = new phone.Phone(this);
+    const fr = await tryImport('./activities/freeroam.js');
+    if (fr) this.freeroam = new fr.FreeRoam(this);
+    const am = await tryImport('./activities/manager.js');
+    const ev = await tryImport('./activities/events.js');
+    if (am && ev) this.activities = new am.ActivityManager(this, ev.buildEvents(this));
   }
 
   /** A fixed pool of real lights (no shader recompiles): player headlights + police strobes. */
@@ -522,6 +527,10 @@ export class Game {
     if (car === this.player.car) this.interior?.onGlass?.(part, lp, shattered);
   }
 
+  onPursuitEnd(how, stars) {
+    this.freeroam?.pursuitEnd?.(how, stars);
+  }
+
   onPropHit(item, speed, point) {
     this.audio?.propHit?.(item, speed, point);
     this.police?.onPropHit?.(item);
@@ -573,6 +582,10 @@ export class Game {
       if (input.pressed('pause') || (this.state === 'map' && input.pressed('map'))) this.menus?.closeAll();
       return;
     }
+    if (this.state === 'card') {
+      if (input.pressed('pause')) this.activities?.closeCard();
+      return;
+    }
     if (this.state !== 'play') return;
     this.handleGlobalKeys();
 
@@ -590,6 +603,7 @@ export class Game {
     if (this.player.mode === 'car' && pc && !photo) {
       this.driver.update(pc, dt, input);
       this.carKeys(pc, dt);
+      if (this.crash) this.updateCrashTest(pc, dt);
     } else if (pc && (photo || this.player.mode === 'foot')) {
       // abandoned car: nobody at the wheel
       pc.phys.input.throttle = 0;
@@ -654,6 +668,9 @@ export class Game {
     this.career?.update(dt);
     this.phone?.update(dt);
     this.dealer?.update(dt);
+    this.freeroam?.update(dt);
+    this.activities?.update(dt);
+    if (input.pressed('restart')) this.activities?.restart();
     this.audio?.update(dt);
     this.gpsUpdate(dt);
     this.zones(dt);
@@ -684,18 +701,101 @@ export class Game {
       this.manualSlowmo = !this.manualSlowmo;
       this.toast(this.manualSlowmo ? 'Slow motion ON' : 'Slow motion OFF');
     }
-    if (input.pressed('photo')) {
-      if (this.cam.mode === 'free') {
-        this.cam.setMode(this.prevCamMode || 'chase');
-        this.input.enabled = true;
-      } else {
-        this.prevCamMode = this.cam.mode;
-        this.cam.setMode('free');
-        this.toast('Photo mode: WASD + mouse, Q/E up/down, Shift fast. F2 to exit.');
-      }
+    if (input.pressed('photo')) this.togglePhoto();
+    if (this.cam.mode === 'free' && input.keyPressed('Enter')) {
+      this.audio?.shutter?.();
+      if (!this.freeroam?.snap()) this.toast('📷 Snap! (find a photo spot for a challenge reward)', 'info', 2);
     }
     if (input.pressed('radio')) this.audio?.nextStation?.();
     if (input.pressed('enterExit')) this.toggleOnFoot();
+  }
+
+  /**
+   * Crash Test (sandbox): like a real test, the car is towed to speed on a cable,
+   * released 8 m before the Proving Grounds wall, and we report what happened.
+   */
+  crashTest(kmh) {
+    const car = this.player.car;
+    const w = this.city.crashWall;
+    if (!car || !w || this.activities?.current) return;
+    if (this.player.mode !== 'car') this.onFoot?.forceEnter?.();
+    car.repair();
+    const v = kmh / 3.6;
+    car.placeAt(w.x - 70, 0, 0, Math.PI / 2);
+    car.body.velocity.set(v, 0, 0);
+    for (const wh of car.phys.wheels) wh.omega = v / wh.radius;
+    const pt = car.phys.pt;
+    car.sys.ignition = 'on';
+    pt.running = true;
+    if (pt.auto) pt.setSelector('D');
+    car.sys.seatbelt = true;
+    this.crash = { v, kmh, state: 'tow', t: 0, peakG: 0, impactV: 0, cam: this.cam.mode };
+    this.cam.setMode('tv');
+    this.cam.initialized = false;
+    this.toast(`Crash test at ${this.fmtSpeed(v)} — hands off!`, 'info', 2);
+  }
+
+  updateCrashTest(car, dt) {
+    const c = this.crash;
+    const w = this.city.crashWall;
+    const p = car.body.position;
+    const inp = car.phys.input;
+    c.t += dt;
+    inp.throttle = 0;
+    inp.brake = 0;
+    inp.handbrake = 0;
+    // keep it on the centre line
+    car.body.toLocalPoint(_v.set(p.x + 30, p.y, 0), _v);
+    inp.steer = clamp(-_v.x * 0.12, -0.3, 0.3);
+    if (c.state === 'tow') {
+      // the tow cable holds the speed exactly
+      const vel = car.body.velocity;
+      vel.x += (c.v - vel.x) * Math.min(1, dt * 8);
+      if (p.x > w.x - 8 - 2.5) {
+        c.state = 'free';
+        if (this.settings.slowmo) this.startSlowmo(1.4);
+      }
+    } else if (c.state === 'free') {
+      c.impactV = Math.max(c.impactV, car.body.velocity.x);
+      if (car.lastImpact > 3 || car.body.velocity.x < c.v * 0.5) {
+        c.state = 'impact';
+        c.t = 0;
+      }
+    } else if (c.state === 'impact') {
+      c.peakG = Math.max(c.peakG, car.gforce.length() / 9.81);
+      if (c.t > 2.5) this.crashReport(car);
+    }
+    if (c.t > 20) this.crash = null; // safety
+  }
+
+  crashReport(car) {
+    const c = this.crash;
+    this.crash = null;
+    const d = car.damageSummary();
+    const lat = car.model.lattice;
+    let crumple = 0;
+    for (let i = 0; i < lat.pos.length; i += 3) crumple = Math.max(crumple, Math.hypot(lat.pos[i] - lat.rest[i], lat.pos[i + 1] - lat.rest[i + 1], lat.pos[i + 2] - lat.rest[i + 2]));
+    const off = car.phys.wheels.filter((wh) => wh.detached).length;
+    const health = car.ext.driver.health;
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const injury = health > 0.9 ? 'unhurt' : health > 0.6 ? 'bruised' : health > 0.3 ? 'injured' : 'critical';
+    const rating = Math.max(0, 5 - Math.round((1 - health) * 5 + (c.peakG > 60 ? 1 : 0)));
+    this.hud.notify(`💥 Crash test · ${this.fmtSpeed(c.v)}`,
+      `Impact ${this.fmtSpeed(c.impactV)} · peak ${Math.round(c.peakG)} g · crumple ${crumple.toFixed(2)} m<br>Body ${pct(d.body)} · engine ${pct(d.engine)}${off ? ` · ${off} wheel${off > 1 ? 's' : ''} off` : ''} · glass ${d.glass.filter((x) => x >= 1).length} broken<br>Airbag ${this.interior?.airbag > 0 ? 'deployed' : 'not deployed'} · occupant ${injury} · ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} safety`, '', 14);
+    this.cam.setMode(c.cam || 'chase');
+  }
+
+  /** Photo mode: free camera, sim paused. Pass on=true/false to force a state. */
+  togglePhoto(on = this.cam.mode !== 'free') {
+    if (!on && this.cam.mode === 'free') {
+      this.cam.setMode(this.prevCamMode || 'chase');
+      this.input.enabled = true;
+      this.freeroam?.photoExit?.();
+    } else if (on && this.cam.mode !== 'free') {
+      this.prevCamMode = this.cam.mode;
+      this.cam.setMode('free');
+      this.toast('Photo mode: WASD + mouse, Q/E up/down, Shift fast, P to snap. F2 to exit.');
+    }
   }
 
   carKeys(car, dt = 1 / 60) {
@@ -1077,6 +1177,24 @@ export class Game {
         return;
       }
     }
+    // car wash: roll through slowly
+    const cw = city.carWash;
+    if (cw && p.x > cw.x0 && p.x < cw.x1 && p.z > cw.z0 && p.z < cw.z1) {
+      cw.spin = 0.5;
+      if (car.speed > 3.5) prompt = 'Car wash: slow down to a crawl';
+      else if (!this.washing) prompt = this.career ? '<kbd>Enter</kbd> Wash the car — $25' : '<kbd>Enter</kbd> Wash the car';
+      if (!this.washing && car.speed <= 3.5 && input.keyPressed('Enter') && (!this.career || this.career.charge(25, 'Car wash'))) this.washing = 3;
+      if (this.washing > 0) {
+        this.washing -= dt;
+        cw.spin = 1;
+        prompt = 'Washing… 🫧';
+        if (this.washing <= 0) {
+          this.washing = 0;
+          car.ext.wash();
+          this.toast('Squeaky clean ✨', 'good', 2);
+        }
+      }
+    } else if (this.washing > 0) this.washing = 0;
     // fuel pumps (combustion) and fast chargers (EV)
     if (car.speed < 1) {
       const pt = car.phys.pt;
@@ -1124,7 +1242,7 @@ export class Game {
     // drag strip timing
     const ds = city.dragStrip;
     const drag = (this.drag ||= { state: 'idle', t: 0 });
-    const onStrip = ds && Math.abs(p.x - ds.x) < 7 && p.z > ds.start - 12 && p.z < ds.quarter + 30;
+    const onStrip = ds && !this.activities?.current && Math.abs(p.x - ds.x) < 7 && p.z > ds.start - 12 && p.z < ds.quarter + 30;
     if (onStrip) {
       if (drag.state === 'idle' && p.z < ds.start && p.z > ds.start - 12 && car.speed < 0.5) {
         drag.state = 'armed';
@@ -1162,7 +1280,7 @@ export class Game {
       } else if (this.skidT > 0 && (this.skidT -= dt) <= 0) this.timerBox(null);
     }
     this.lastKmh = kmh;
-    this.hud.prompt(prompt);
+    this.hud.prompt(prompt || this.activityPrompt || null);
   }
 
   timerBox(text) {
