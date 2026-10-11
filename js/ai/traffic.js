@@ -277,6 +277,27 @@ export class Driver {
         bestV = (c.body.velocity.x * tx + c.body.velocity.z * tz) / tl;
       }
     }
+    // pedestrians on the road (crossing, knocked down, diving)
+    const peds = this.mgr.game.peds;
+    if (peds)
+      for (const p of peds.onRoadNear(me, 45)) {
+        let bi = -1, bd = 2.2 * 2.2;
+        for (let i = this.i0; i <= iEnd; i++) {
+          const d = (pts[i].x - p.pos.x) ** 2 + (pts[i].z - p.pos.z) ** 2;
+          if (d < bd) {
+            bd = d;
+            bi = i;
+          }
+        }
+        if (bi < 0) continue;
+        const gap = pts[bi].s - this.sCar - myHalf - 1.2;
+        if (gap > -1 && gap < bestGap) {
+          bestGap = Math.max(0, gap);
+          best = null;
+          bestV = 0;
+          this.pedAhead = p;
+        }
+      }
     this.leader = best;
     this.leaderGap = bestGap;
     this.leaderV = bestV;

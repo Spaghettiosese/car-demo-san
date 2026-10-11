@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RigidBody } from '../physics/body.js';
 import { Powertrain } from './powertrain.js';
 import { tireGain } from './tire.js';
-import { clamp, valueNoise } from '../core/util.js';
+import { clamp, valueNoise, smoothstep } from '../core/util.js';
 
 const VMIN = 1.2; // m/s floor for slip denominators (keeps low speed stable)
 const AIR = 1.225;
@@ -81,6 +81,10 @@ class Wheel {
     this.worldPos = new THREE.Vector3();
     this.impact = 0; // suspension hit strength this frame (for sounds)
     this.hp.copy(this.hp0);
+    this.temp = this.temp ?? 38; // tyre carcass temperature, C
+    this.wear = this.wear ?? 0; // 0 new .. 1 bald
+    this.slick = 1;
+    this.esc = 0;
   }
 }
 
@@ -95,6 +99,7 @@ export class VehiclePhysics {
     this.body = new RigidBody(tuning.mass, tuning.inertia);
     this.body.angularDamping = 0.05;
     this.wheels = tuning.wheels.map((d) => new Wheel(d, tuning.com));
+    this.wheels.forEach((w, i) => (w.idx = i));
     this.pt = new Powertrain(tuning.powertrain);
     this.input = { throttle: 0, brake: 0, steer: 0, handbrake: 0 };
     this.steerAngle = 0;
@@ -113,6 +118,24 @@ export class VehiclePhysics {
     const fw = (tuning.com.z - tuning.dims.zR) / tuning.dims.WB;
     for (const w of this.wheels) w.staticLoad = (tuning.mass * g * (w.front ? fw : 1 - fw)) / 2;
     this.tanAPeak = Math.tan(tuning.tire.aPeak);
+    // v2
+    const al = tuning.alignment || { pressure: 2.2, camber: -1, toe: 0 };
+    this.toeRad = (al.toe * Math.PI) / 180;
+    const cam = al.camber;
+    this.camberLat = 1 + 0.03 * clamp(-cam, 0, 3) - 0.03 * Math.max(0, -cam - 3) - 0.04 * Math.max(0, cam);
+    this.camberLong = 1 - 0.015 * Math.abs(cam);
+    this.pressureGrip = 1 - 0.12 * Math.pow(Math.abs(al.pressure - 2.2), 1.3);
+    this.pressureRoll = 1 + (2.2 - al.pressure) * 0.5;
+    this.pressureHeat = 1 + (2.2 - al.pressure) * 0.6;
+    this.brakeHeat = null; // set by the car
+    this.wind = new THREE.Vector3();
+    this.rackOffset = 0;
+    this.rackDamage = 0;
+    this.hsaT = 0;
+    this.escActive = false;
+    this.selfAlign = 0;
+    this.events = [];
+    this.ambient = 20;
   }
 
   /** Put the car at rest on the ground at (x, groundY, z) facing yaw (0 = +z). */
@@ -127,8 +150,10 @@ export class VehiclePhysics {
     b.updateDerived();
     for (const w of this.wheels) {
       const keepDetached = w.detached;
-      const toe = w.toe, bend = w.bend, flat = w.flat, hp = w.hp.clone();
+      const toe = w.toe, bend = w.bend, flat = w.flat, hp = w.hp.clone(), wear = w.wear, temp = w.temp;
       w.reset();
+      w.wear = wear;
+      w.temp = temp;
       w.detached = keepDetached;
       w.toe = toe;
       w.bend = bend;
@@ -152,7 +177,7 @@ export class VehiclePhysics {
     b.axis(2, FWD);
 
     // ---------------- steering (Ackermann) ----------------
-    const delta = clamp(input.steer, -1, 1) * t.maxSteer;
+    const delta = clamp(input.steer, -1, 1) * t.maxSteer * (1 - this.rackDamage * 0.4) + this.rackOffset;
     this.steerAngle = delta;
     let yawL = 0, yawR = 0;
     if (Math.abs(delta) > 1e-4) {
@@ -181,7 +206,7 @@ export class VehiclePhysics {
         continue;
       }
       const wobble = w.bend ? Math.sin(w.spin) * w.bend : 0;
-      w.yaw = (w.steer ? (w.left ? yawL : yawR) : 0) + w.toe + wobble * 0.4;
+      w.yaw = (w.steer ? (w.left ? yawL : yawR) : 0) + w.toe + wobble * 0.4 + this.toeRad * (w.left ? -1 : 1) * (w.front ? 1 : 0.5);
       b.toWorldPoint(w.hp, w.hpWorld);
       _a.set(Math.sin(w.yaw), 0, Math.cos(w.yaw));
       b.toWorldDir(_a, w.fwdRaw);
@@ -207,6 +232,7 @@ export class VehiclePhysics {
             w.mat = _g.mat;
           }
         }
+        w.slick = world.slicks && world.slicks.length ? world.slickAt(o.x, o.z, this.wet) : 1;
         const sHit = (o.y - best) / upY;
         w.sHit = sHit;
         if (sHit < w.sMax) {
@@ -262,7 +288,7 @@ export class VehiclePhysics {
     }
 
     // ---------------- tire state before drive update ----------------
-    const wetMul = 1 - this.wet * (1 - tire.wet);
+    const vAbs = b.velocity.length();
     for (const w of this.wheels) {
       if (!w.contact) {
         w.kLong = 0;
@@ -281,7 +307,13 @@ export class VehiclePhysics {
       let grip = surf.grip;
       if (tire.offroad && surf.grip < 0.9) grip = Math.min(0.95, grip + 0.22);
       const ls = clamp(1 - tire.loadSens * (w.load / w.staticLoad - 1), 0.7, 1.15);
-      w.mu = tire.mu * grip * wetMul * ls * this.gripScale * (1 - 0.45 * w.flat);
+      const wetMul = 1 - this.wet * (1 - tire.wet) * (1 + w.wear * 0.8);
+      const opt = tire.optTemp || 70;
+      const thermal = 0.9 + 0.1 * Math.exp(-(((w.temp - opt) / 45) ** 2));
+      const worn = 1 - 0.3 * Math.pow(w.wear, 1.6);
+      let slick = w.slick;
+      if (slick < 0) slick = 1 - clamp((vAbs - 18) / 10, 0, 0.72); // standing water: aquaplaning
+      w.mu = tire.mu * grip * wetMul * ls * this.gripScale * (1 - 0.45 * w.flat) * thermal * worn * this.pressureGrip * slick * (1 - Math.min(0.25, Math.abs(w.camber) * 0.6));
       w.vden = Math.max(Math.abs(w.vx), VMIN);
       const sx = (w.omega * R - w.vx) / w.vden / tire.kPeak;
       const sy = w.vy / w.vden / this.tanAPeak;
@@ -303,13 +335,49 @@ export class VehiclePhysics {
     const T = this.pt.update(dt, thr, drivenOmega, S || 1, grounded > 0, groundOmega);
     const parked = this.pt.selector === 'P' && this.pt.auto;
 
+    // ---------------- ESC: brake single wheels to follow the steering ----------------
+    let escBrake0 = 0, escBrake1 = 0, escBrake2 = 0, escBrake3 = 0;
+    this.escActive = false;
+    const vf = b.velocity.dot(FWD);
+    if (t.assists.esc && vf > 7 && grounded >= 3) {
+      const r = b.angularVelocity.dot(UP);
+      const rDes = (vf * Math.tan(delta)) / t.dims.WB / (1 + (vf / 28) ** 2);
+      const rMax = (tire.mu * 9.81) / vf;
+      const want = clamp(rDes, -rMax, rMax);
+      const err = r - want;
+      if (Math.abs(r) > Math.abs(want) + 0.12 && Math.sign(err) === Math.sign(r)) {
+        // oversteer: brake the outside front
+        const T = clamp(Math.abs(err) * 3000, 0, 2600);
+        if (r > 0) escBrake1 = T; else escBrake0 = T;
+        this.escActive = true;
+      } else if (Math.abs(delta) > 0.06 && Math.abs(r) < Math.abs(want) - 0.18) {
+        // understeer: brake the inside rear
+        const T = clamp((Math.abs(want) - Math.abs(r)) * 1800, 0, 1500);
+        if (want > 0) escBrake2 = T; else escBrake3 = T;
+        this.escActive = true;
+      }
+    }
+    const escB = [escBrake0, escBrake1, escBrake2, escBrake3];
+    // hill-start assist: keep the brakes on briefly after you lift off them on a slope
+    let brakeIn = clamp(input.brake, 0, 1);
+    if (brakeIn > 0.2 && vAbs < 0.5) this.hsaT = 1.4;
+    else if (this.hsaT > 0) {
+      this.hsaT -= dt;
+      if (Math.abs(FWD.y) > 0.03 && input.throttle < 0.35 && vAbs < 1) brakeIn = Math.max(brakeIn, 0.55);
+      else if (input.throttle >= 0.35) this.hsaT = 0;
+    }
+    // launch control
+    this.pt.launchArmed = !!(this.pt.spec.launch && t.assists.tcs && input.brake > 0.5 && input.throttle > 0.8 && vAbs < 1);
+
     // ---------------- wheel spin + tire forces ----------------
     this.absActive = false;
     let maxSpin = 0;
     for (const w of this.wheels) {
       if (w.detached) continue;
       const R = w.rNow;
-      let Tb = clamp(input.brake, 0, 1) * t.brakes.max * w.brake;
+      const heat = this.brakeHeat ? this.brakeHeat[w.idx] : 0;
+      const fade = 1 - 0.5 * smoothstep(t.brakes.fadeStart || 0.55, 1, heat);
+      let Tb = brakeIn * t.brakes.max * w.brake * fade + escB[w.idx];
       if (!w.front) Tb += clamp(input.handbrake, 0, 1) * t.brakes.handbrake;
       if (this.parkBrake && !w.front) Tb += t.brakes.handbrake * 1.5;
       if (parked && w.share > 0) Tb += 6000;
@@ -323,7 +391,7 @@ export class VehiclePhysics {
       const Td = w.share > 0 ? T * w.share : 0;
       w.driveT = Td;
       if (w.contact) {
-        const Tr = (0.012 + (w.mat ? w.mat.drag : 0) + w.flat * 0.04) * w.load * R;
+        const Tr = (0.012 * this.pressureRoll + (w.mat ? w.mat.drag : 0) + w.flat * 0.04) * w.load * R;
         const Ieff = w.inertia + dt * R * w.kLong;
         let om = w.omega + (dt * (Td - R * w.fx0)) / Ieff;
         const cap = (dt * (Tb + Tr)) / Ieff;
@@ -367,8 +435,8 @@ export class VehiclePhysics {
       const sy = w.vy / w.vden / this.tanAPeak;
       const s = Math.hypot(sx, sy);
       const gain = tireGain(s, tire.falloff);
-      w.fx = w.mu * w.load * gain * sx;
-      w.fy = -w.mu * w.load * gain * sy;
+      w.fx = w.mu * w.load * gain * sx * this.camberLong;
+      w.fy = -w.mu * w.load * gain * sy * this.camberLat;
       w.slip = s;
       w.slipRatio = slipV / w.vden;
       w.slipAngle = Math.atan2(w.vy, Math.abs(w.vx) + 0.01);
@@ -382,7 +450,24 @@ export class VehiclePhysics {
       _a.copy(w.f).multiplyScalar(w.fx).addScaledVector(w.sd, w.fy);
       _b.copy(w.cp).addScaledVector(UP, t.rollCenter);
       b.applyForce(_a, _b);
+      // tyre temperature and wear
+      const roll = Math.abs(w.vx);
+      const heatIn = (w.slideVel * w.load * 0.00016 + roll * 0.06) * this.pressureHeat;
+      w.temp += (heatIn - (w.temp - this.ambient) * (0.012 + roll * 0.0015) - this.wet * 0.3) * dt;
+      w.wear = Math.min(1, w.wear + (w.slideVel * w.load * 2.5e-8 + roll * 1e-8) * (1 + Math.max(0, w.temp - 110) * 0.03) * (tire.wearRate || 1) * dt);
+      if ((w.temp > 150 || w.wear > 0.97) && w.flat < 1 && Math.random() < dt * 0.25) {
+        w.flat = 1;
+        this.events.push({ type: 'blowout', wheel: w.idx });
+      }
     }
+    // steering feel: pneumatic-trail aligning torque from the front tyres
+    let align = 0;
+    for (let i = 0; i < 2; i++) {
+      const w = this.wheels[i];
+      if (!w.contact || w.detached) continue;
+      align += w.fy * 0.035 * Math.max(0, 1 - w.slip / 1.6);
+    }
+    this.selfAlign = clamp(align / (t.mass * 3), -1, 1);
 
     // traction control
     const cutTarget = t.assists.tcs && input.throttle > 0.1 ? clamp(maxSpin / 1.5, 0, 0.85) : 0;
@@ -392,6 +477,15 @@ export class VehiclePhysics {
     // ---------------- aerodynamics ----------------
     const v = b.velocity;
     const sp = v.length();
+    if (this.wind.lengthSq() > 0.5) {
+      // crosswind on the side of the body
+      _c.copy(this.wind).sub(v);
+      const lat = _c.dot(LEFT);
+      const area = t.dims.L * t.dims.H * 0.72;
+      _a.copy(LEFT).multiplyScalar(0.5 * AIR * 1.1 * area * lat * Math.abs(lat));
+      _b.copy(b.position).addScaledVector(UP, 0.35);
+      b.applyForce(_a, _b);
+    }
     this.speed = sp;
     this.forwardSpeed = v.dot(FWD);
     if (sp > 0.5) {
@@ -422,7 +516,7 @@ export class VehiclePhysics {
     const mode = this.t.diff;
     if (mode === 'open') return;
     const avg = (a.omega * a.inertia + c.omega * c.inertia) / (a.inertia + c.inertia);
-    const f = mode === 'locked' ? 1 : 1 - Math.exp(-dt * 30);
+    const f = mode === 'locked' ? 1 : 1 - Math.exp(-dt * (10 + 40 * (this.t.lsdPreload ?? 0.5)));
     a.omega += (avg - a.omega) * f;
     c.omega += (avg - c.omega) * f;
   }

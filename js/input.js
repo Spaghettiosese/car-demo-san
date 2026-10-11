@@ -32,7 +32,79 @@ export const BINDINGS = {
   jump: ['Space'],
   run: ['ShiftLeft'],
   interact: ['KeyE'],
+  // v2
+  clutch: ['ControlLeft'],
+  cruise: ['KeyO'],
+  cruiseUp: ['Equal'],
+  cruiseDown: ['Minus'],
+  limiter: ['KeyU'],
+  flash: ['KeyY'],
+  fog: ['Period'],
+  driveMode: ['Comma'],
+  regen: ['Slash'],
+  lookLeft: ['BracketLeft'],
+  lookRight: ['BracketRight'],
+  phone: ['Tab'],
+  replay: ['F5'],
+  hideHud: ['F6'],
+  restart: ['F4'],
+  seatUp: ['PageUp'],
+  seatDown: ['PageDown'],
+  seatFwd: ['Home'],
+  seatBack: ['End'],
+  gear1: ['Digit1'],
+  gear2: ['Digit2'],
+  gear3: ['Digit3'],
+  gear4: ['Digit4'],
+  gear5: ['Digit5'],
+  gear6: ['Digit6'],
+  gear7: ['Digit7'],
+  gearR: ['Backquote'],
+  gearN: ['Digit0'],
+  fob: ['KeyK'],
 };
+
+/** Actions the player may rebind, with labels for the controls screen. */
+export const REBINDABLE = {
+  throttle: 'Throttle', brake: 'Brake / reverse', left: 'Steer left', right: 'Steer right', handbrake: 'Handbrake',
+  clutch: 'Clutch', shiftUp: 'Shift up', shiftDown: 'Shift down', horn: 'Horn', lights: 'Headlights', highBeam: 'High beams',
+  flash: 'Flash to pass', fog: 'Fog lights', indLeft: 'Indicator left', indRight: 'Indicator right', hazard: 'Hazards',
+  wipers: 'Wipers', ignition: 'Ignition', cruise: 'Cruise control', limiter: 'Speed limiter', driveMode: 'Drive mode',
+  camera: 'Camera', lookBack: 'Look back', lookLeft: 'Look left', lookRight: 'Look right', enterExit: 'Get in / out',
+  reset: 'Recover car', repair: 'Repair', map: 'Map', phone: 'Phone', radio: 'Next station', siren: 'Siren',
+  replay: 'Replay', photo: 'Photo mode', hideHud: 'Hide HUD', restart: 'Restart event',
+};
+const DEFAULT_BINDINGS = JSON.parse(JSON.stringify(BINDINGS));
+try {
+  const saved = JSON.parse(localStorage.getItem('sandemo.keys') || 'null');
+  if (saved) for (const k in saved) if (BINDINGS[k] && Array.isArray(saved[k])) BINDINGS[k] = saved[k];
+} catch (e) {
+  /* ignore */
+}
+export function rebind(action, code) {
+  if (!BINDINGS[action]) return;
+  // free the key from any other action of the same kind first
+  for (const k in BINDINGS) if (k !== action && REBINDABLE[k]) BINDINGS[k] = BINDINGS[k].filter((c) => c !== code);
+  BINDINGS[action] = [code, ...BINDINGS[action].filter((c) => c !== code)].slice(0, 2);
+  saveBindings();
+}
+export function resetBindings() {
+  for (const k in DEFAULT_BINDINGS) BINDINGS[k] = DEFAULT_BINDINGS[k].slice();
+  saveBindings();
+}
+function saveBindings() {
+  try {
+    const out = {};
+    for (const k in REBINDABLE) out[k] = BINDINGS[k];
+    localStorage.setItem('sandemo.keys', JSON.stringify(out));
+  } catch (e) {
+    /* ignore */
+  }
+}
+export function keyLabel(code) {
+  if (!code) return '—';
+  return code.replace(/^Key/, '').replace(/^Digit/, '').replace('ArrowUp', '↑').replace('ArrowDown', '↓').replace('ArrowLeft', '←').replace('ArrowRight', '→').replace('ShiftLeft', 'L-Shift').replace('ControlLeft', 'L-Ctrl').replace('Backquote', '`').replace('BracketLeft', '[').replace('BracketRight', ']');
+}
 
 export class Input {
   constructor(dom) {
@@ -49,7 +121,14 @@ export class Input {
     this.enabled = true;
     window.addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'F1', 'F2', 'F3', 'Tab'].includes(e.code)) e.preventDefault();
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'Tab', 'PageUp', 'PageDown', 'Home', 'End', 'Slash', 'Quote'].includes(e.code)) e.preventDefault();
+      if (this.captureNext) {
+        const cb = this.captureNext;
+        this.captureNext = null;
+        cb(e.code);
+        e.preventDefault();
+        return;
+      }
       if (!this.keys.has(e.code)) this.pressedSet.add(e.code);
       this.keys.add(e.code);
       this.lastDevice = 'keyboard';
@@ -126,7 +205,7 @@ export class Input {
   // ---------------- gamepad (standard mapping) ----------------
   static PAD = {
     handbrake: 0, lookBack: 1, horn: 2, camera: 3, shiftDown: 4, shiftUp: 5,
-    pause: 9, map: 8, lights: 12, wipers: 13, indLeft: 14, indRight: 15, hazard: 10, enterExit: 11, jump: 0, interact: 2,
+    pause: 9, map: 8, lights: 12, wipers: 13, indLeft: 14, indRight: 15, clutch: 10, enterExit: 11, jump: 0, interact: 2,
   };
   poll() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -164,7 +243,25 @@ export class Input {
       thr = Math.max(thr, rt);
       brk = Math.max(brk, lt);
     }
-    return { steer, throttle: thr, brake: brk, analog: analog && this.lastDevice === 'pad' };
+    const kbClutch = BINDINGS.clutch.some((k) => this.keys.has(k)) ? 1 : 0;
+    const clutch = Math.max(kbClutch, this.pad ? this.padButtons[10] || 0 : 0);
+    return { steer, throttle: thr, brake: brk, clutch, analog: analog && this.lastDevice === 'pad', wheel: this.isWheel() };
+  }
+
+  /** A steering wheel shows up as a gamepad whose id mentions a wheel. */
+  isWheel() {
+    return !!(this.pad && /wheel|g29|g920|g923|t300|t150|fanatec|moza|logitech g|thrustmaster/i.test(this.pad.id));
+  }
+
+  /** Force-feedback-lite: gamepad rumble. */
+  rumble(strong, weak, ms = 60) {
+    const a = this.pad && this.pad.vibrationActuator;
+    if (!a || (strong < 0.02 && weak < 0.02)) return;
+    try {
+      a.playEffect('dual-rumble', { duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) });
+    } catch (e) {
+      /* ignore */
+    }
   }
   look() {
     let x = 0, y = 0;

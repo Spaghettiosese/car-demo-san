@@ -4,6 +4,7 @@ import { VehiclePhysics } from './vehiclePhysics.js';
 import { buildCarModel } from './carBuilder.js';
 import { clamp, lerp, damp } from '../core/util.js';
 import { updateWaterEffects } from '../physics/water.js';
+import { CarSystems } from './systems.js';
 
 let NEXT_ID = 1;
 const _v = new THREE.Vector3();
@@ -80,8 +81,22 @@ export class Car {
       radio: 0,
       reverseLights: false,
       brakeLights: false,
+      // v2
+      lightLevel: 0, // what the lamps actually do (AUTO resolves to 0..2)
+      wiperSpeed: 0,
+      fog: 0, // 0 off, 1 front, 2 front + rear
+      fan: 1, // 0..3
+      climateTemp: 21,
+      ac: false,
+      rearDefrost: false,
+      mirrorsFolded: false,
+      fuelDoor: false,
+      seatH: 0,
+      seatZ: 0,
     };
     this.computeBounds();
+    this.phys.brakeHeat = this.brakeHeat;
+    this.ext = new CarSystems(this);
   }
 
   get position() {
@@ -163,11 +178,16 @@ export class Car {
     return s.ignition;
   }
   get electrics() {
-    return !this.electricsDead && (this.sys.ignition !== 'off' || this.phys.pt.running);
+    return !this.electricsDead && (!this.ext || this.ext.electricsOk) && (this.sys.ignition !== 'off' || this.phys.pt.running);
   }
+  /** Light switch: off -> parking -> low beam -> AUTO. */
   cycleHeadlights() {
-    this.sys.headlights = (this.sys.headlights + 1) % 3;
+    this.sys.headlights = (this.sys.headlights + 1) % 4;
     return this.sys.headlights;
+  }
+  cycleFog() {
+    this.sys.fog = (this.sys.fog + 1) % 3;
+    return this.sys.fog;
   }
   setIndicator(dir) {
     const s = this.sys;
@@ -179,8 +199,9 @@ export class Car {
     this.sys.hazard = !this.sys.hazard;
     this.sys.blink = 0;
   }
+  /** Wiper stalk: off -> intermittent -> low -> high -> AUTO (rain sensor). */
   cycleWipers() {
-    this.sys.wipers = (this.sys.wipers + 1) % 4;
+    this.sys.wipers = (this.sys.wipers + 1) % 5;
     return this.sys.wipers;
   }
 
@@ -227,6 +248,7 @@ export class Car {
         this.hitBy.set(c.other.id, (this.hitBy.get(c.other.id) || 0) + dv);
       }
       this.game.onImpact?.(this, c.p, c.n, dv, c.other, c.kind);
+      if (this.isPlayer && dv > 7) this.ext.onImpact(dv, this.body.toLocalPoint(c.p, _v3), this.game);
       const threshold = 1.6;
       if (dv > threshold && dmgMul > 0) {
         const strength = (dv - threshold) * dmgMul;
@@ -400,7 +422,7 @@ export class Car {
     this.game.onPartEvent?.(this, null, 'wheelOff');
   }
 
-  repair() {
+  repair(opts = {}) {
     const m = this.model;
     const debris = this.game.debris;
     m.lattice.reset();
@@ -456,9 +478,15 @@ export class Car {
     this.flood = 0;
     this.electricsDead = false;
     pt.hydrolocked = false;
+    this.ext.repair();
+    if (!opts.keepTyres) for (const w of this.phys.wheels) {
+      w.wear = 0;
+      w.temp = 38;
+    }
     m.applyDeformation();
     this.computeBounds();
     if (m.livery) this.game.repaintLivery?.(this);
+    if (this.isPlayer) this.game.interior?.reset?.();
   }
 
   /** 0..1 overall damage for the HUD. */
@@ -508,7 +536,9 @@ export class Car {
     // indicator blink & self-cancel
     s.blink += dt;
     const period = 0.7;
-    s.blinkOn = (s.indicator !== 'none' || s.hazard) && s.blink % period < period * 0.5;
+    s.blinkOn = (s.indicator !== 'none' || s.hazard || s.blinkFob > 0) && s.blink % period < period * 0.5;
+    if (s.blinkFob > 0 && s.indicator === 'none' && !s.hazard) s.blinkHaz = true;
+    else s.blinkHaz = false;
     if (s.indicator !== 'none' && !s.hazard) {
       const st = this.phys.input.steer;
       const into = s.indicator === 'right' ? st : -st;
@@ -518,9 +548,11 @@ export class Car {
         s.indArmed = false;
       }
     }
-    // wipers
-    if (s.wipers > 0 || s.wiperAngle > 0.001) {
-      const speed = s.wipers === 3 ? 4.4 : 2.6;
+    this.ext.update(dt, this.game);
+    // wipers (wiperSpeed resolves the AUTO position)
+    const ws = s.wiperSpeed;
+    if (ws > 0 || s.wiperAngle > 0.001) {
+      const speed = ws === 3 ? 4.4 : 2.6;
       if (s.wiperPause > 0) s.wiperPause -= dt;
       else {
         s.wiperAngle += s.wiperDir * speed * dt;
@@ -530,12 +562,12 @@ export class Car {
         } else if (s.wiperAngle <= 0) {
           s.wiperAngle = 0;
           s.wiperDir = 1;
-          if (s.wipers === 1) s.wiperPause = 2.2;
-          if (s.wipers === 0) s.wiperDir = 0;
+          if (ws === 1) s.wiperPause = 2.2;
+          if (ws === 0) s.wiperDir = 0;
           this.game.onWiperCycle?.(this);
         }
       }
-      if (s.wipers > 0 && s.wiperDir === 0) s.wiperDir = 1;
+      if (ws > 0 && s.wiperDir === 0) s.wiperDir = 1;
     }
     if (s.washer > 0) s.washer -= dt;
     // windows
@@ -549,6 +581,19 @@ export class Car {
     }
     // fuel leak & fire
     if (this.fuelLeak > 0) pt.fuel = Math.max(0, pt.fuel - this.fuelLeak * 0.05 * dt);
+    // leaking fluids leave slippery puddles where the car stands
+    const leaking = pt.oilLeak > 0 && pt.oil > 0.02 ? 'oil' : pt.radiator < 0.6 && pt.coolant > 0.05 ? 'coolant' : this.fuelLeak > 0.2 && pt.fuel > 0.5 ? 'oil' : null;
+    if (leaking) {
+      this.leakT = (this.leakT || 0) - dt * (this.speed < 2 ? 1 : 0.15);
+      if (this.leakT <= 0) {
+        this.leakT = 2.5;
+        const w = this.game.world;
+        if (w.slicks.length > 120) w.slicks.splice(0, w.slicks.findIndex((q) => q.kind === 'oil' || q.kind === 'coolant') + 1);
+        const p = this.body.position;
+        w.addSlick(p.x, p.z, this.speed < 2 ? 1.3 : 0.7, leaking, 400);
+        this.game.onLeak?.(this, p, leaking);
+      }
+    }
     // engine smoke level
     this.smoke = pt.health < 0.6 ? (0.6 - pt.health) / 0.6 : 0;
     if (pt.radiator < 0.8 && pt.running) this.smoke = Math.max(this.smoke, 0.25 * (1 - pt.radiator));
@@ -623,7 +668,7 @@ export class Car {
       wv.spin.scale.set(1, flat, 1);
       if (wv.discMat.emissiveIntensity !== undefined && !this.npc) wv.discMat.emissiveIntensity = Math.max(0, this.brakeHeat[i] - 0.35) * 3;
     });
-    this.updateLights(time);
+    this.updateLights(time, dt || 1 / 60);
     // wipers
     const wa = this.sys.wiperAngle;
     for (const [i, wp] of m.details.wipers.entries()) wp.rotation.y = -wa * 1.45 * (i === 0 ? 1 : 1);
@@ -642,7 +687,7 @@ export class Car {
     }
   }
 
-  updateLights(time) {
+  updateLights(time, dt = 1 / 60) {
     const s = this.sys;
     const m = this.model;
     const L = m.lights;
@@ -651,14 +696,19 @@ export class Car {
     const pt = this.phys.pt;
     s.brakeLights = el && inp.brake > 0.05;
     s.reverseLights = el && pt.gear < 0;
-    const headOn = el && s.headlights === 2;
-    const flash = s.flash > 0 || this.lightsFlash > 0;
+    const lvl = this.npc ? s.headlights : s.lightLevel;
+    // a weak battery dims everything
+    const dim = this.ext ? clamp((this.ext.volts - 10.2) / 2, 0.15, 1) : 1;
+    const headOn = el && lvl === 2;
+    const flash = el && (s.flash > 0 || this.lightsFlash > 0);
     const high = (s.high && headOn) || flash;
     for (const u of L.head) {
       if (u.broken) continue;
-      u.mat.emissiveIntensity = high ? 5 : headOn ? 3.2 : s.headlights === 1 || (el && pt.running) ? 0.5 : 0;
+      u.mat.emissiveIntensity = (high ? 5 : headOn ? 3.2 : lvl === 1 || (el && pt.running) ? 0.5 : 0) * dim;
     }
-    const tailBase = s.headlights >= 1 ? 1.0 : 0;
+    for (const u of L.fogF || []) if (!u.broken) u.mat.emissiveIntensity = el && s.fog >= 1 && lvl >= 1 ? 3 * dim : 0;
+    for (const u of L.fogR || []) if (!u.broken) u.mat.emissiveIntensity = el && s.fog >= 2 && lvl >= 1 ? 4 * dim : 0;
+    const tailBase = lvl >= 1 ? 1.0 * dim : 0;
     for (const u of L.tail) {
       if (u.broken) continue;
       u.mat.emissiveIntensity = s.brakeLights ? 4.5 : tailBase;
@@ -668,12 +718,12 @@ export class Car {
     for (const u of [...L.indF, ...L.indR]) {
       if (u.broken) continue;
       const side = u.side > 0 ? 'left' : 'right';
-      const on = ind && (s.hazard || s.indicator === side);
+      const on = ind && (s.hazard || s.blinkHaz || s.indicator === side);
       u.mat.emissiveIntensity = on ? 4 : 0;
     }
     for (const u of L.reverse) if (!u.broken) u.mat.emissiveIntensity = s.reverseLights ? 3 : 0;
-    if (s.flash > 0) s.flash -= 1 / 60;
-    if (this.lightsFlash > 0) this.lightsFlash -= 1 / 60;
+    if (s.flash > 0) s.flash -= dt;
+    if (this.lightsFlash > 0) this.lightsFlash -= dt;
     void time;
   }
 

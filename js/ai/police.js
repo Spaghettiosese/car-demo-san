@@ -20,6 +20,7 @@ const OFFENSES = {
   assault: { heat: 1.5, fine: 1000, text: 'Ramming a police vehicle' },
   carjack: { heat: 2, fine: 2000, text: 'Grand theft auto' },
   evading: { heat: 1, fine: 800, text: 'Evading police' },
+  pedestrian: { heat: 2, fine: 2500, text: 'Running over a pedestrian' },
 };
 
 function copConfig(heavy) {

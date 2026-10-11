@@ -61,7 +61,7 @@ export class Interior {
     const soft = mat(0x26272b, 0.95);
     const trim = mat(0x3a3b40, 0.5, 0.3);
     const alu = mat(0x9ea3aa, 0.3, 0.9);
-    const leather = mat(0x2b2521, 0.7);
+    const leather = mat(new THREE.Color(car.cfg.interiorColor || '#2b2521').getHex(), 0.7);
     this.mats = { dark, soft, trim, alu, leather };
     const cowlY = f.top(Z.cowl);
     const dashTop = Math.min(cowlY - 0.02, sy - 0.2);
@@ -103,6 +103,19 @@ export class Interior {
     cluster.rotation.set(0.35, Math.PI, 0);
     g.add(cluster);
     this.cluster = cluster;
+    this.tripPage = 0;
+    this.clickable([cluster], (hit) => {
+      const right = hit && hit.uv && hit.uv.x > 0.5;
+      return right ? 'Trip computer: <b>reset</b> trip' : 'Trip computer: <b>next page</b>';
+    }, (hit) => {
+      const right = hit && hit.uv && hit.uv.x > 0.5;
+      if (right) {
+        const page = this.tripPage % 8;
+        this.car.ext.resetTrip(page === 1 ? 'b' : 'a');
+        this.game.toast(`Trip ${page === 1 ? 'B' : 'A'} reset`);
+      } else this.tripPage = (this.tripPage + 1) % 8;
+      this.game.audio?.click?.();
+    });
 
     // ---- steering column + wheel ----
     const wheelCenter = new THREE.Vector3(sx, sy - 0.33, sz + 0.5);
@@ -116,9 +129,17 @@ export class Interior {
     this.wheelPivot.add(column);
     this.wheel = new THREE.Group();
     this.wheelPivot.add(this.wheel);
-    const rimR = 0.185;
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(rimR, 0.018, 10, 40), leather);
+    const style = car.cfg.wheelStyleInterior || 'stock';
+    const rimR = style === 'sport' ? 0.17 : style === 'classic' ? 0.2 : 0.185;
+    const rimMat = style === 'classic' ? mat(0x6b4a2e, 0.45) : style === 'sport' ? mat(0x1a1a1a, 0.95) : leather;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rimR, style === 'sport' ? 0.022 : style === 'classic' ? 0.012 : 0.018, 10, 40), rimMat);
     this.wheel.add(rim);
+    if (style === 'sport') {
+      // top-dead-centre stripe
+      const tdc = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.012, 0.046), mat(0xff6a1f, 0.6));
+      tdc.position.set(0, rimR, 0);
+      this.wheel.add(tdc);
+    }
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.05, 20), dark);
     hub.rotation.x = Math.PI / 2;
     this.wheel.add(hub);
@@ -198,6 +219,27 @@ export class Interior {
     fob.position.set(0, -0.04, -0.035);
     this.key.add(keyHead, keyBlade, fob);
     this.wheelPivot.add(this.key);
+    if (car.phys.pt.ev) {
+      // EVs have a START/STOP button instead of a key
+      this.key.visible = false;
+      barrel.visible = false;
+      const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.012, 20), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, emissive: new THREE.Color(0.2, 0.6, 1), emissiveIntensity: 0.3, roughness: 0.4 }));
+      btn.rotation.x = Math.PI / 2;
+      btn.position.set(-0.11, -0.06, 0.17);
+      this.wheelPivot.add(btn);
+      this.startBtn = btn;
+      this.clickable([btn], () => {
+        const pt = this.car.phys.pt;
+        if (pt.running) return 'Power: <b>OFF</b>';
+        return 'START (hold the brake <kbd>S</kbd>)';
+      }, () => {
+        const pt = this.car.phys.pt;
+        if (pt.running) this.car.stopEngine();
+        else if (this.car.phys.input.brake < 0.3 && this.game.input.drive().brake < 0.3) this.game.toast('Press the brake pedal to start');
+        else this.car.startEngine();
+        this.game.audio?.click?.();
+      });
+    }
     this.clickable([keyHead, keyBlade, barrel, fob], () => {
       const pt = this.car.phys.pt;
       if (pt.running) return 'Ignition: <b>turn off</b> engine';
@@ -219,10 +261,56 @@ export class Interior {
     knobMark.position.set(0, 0.015, -0.012);
     knob.add(knobMark);
     this.lightKnob = knob;
-    this.clickable([knob, knobMark], () => `Headlights: <b>${['off', 'parking', 'on'][this.car.sys.headlights]}</b> (<kbd>L</kbd>)`, () => {
+    this.clickable([knob, knobMark], () => `Headlights: <b>${['off', 'parking', 'on', 'AUTO'][this.car.sys.headlights]}</b> (<kbd>L</kbd>)`, () => {
       this.car.cycleHeadlights();
       this.game.audio?.click?.();
     });
+    // fog light button next to the knob
+    this.fogBtn = this.button(g, sx + 0.3, sy - 0.42, sz + 0.66, 0.035, 0.02, 0x2a2a2a, [0.3, 1, 0.4], () => `Fog lights: <b>${['off', 'front', 'front + rear'][this.car.sys.fog]}</b> (<kbd>.</kbd>)`, () => this.car.cycleFog());
+    // hood release lever under the dash
+    const hoodLever = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 0.06), mat(0x222222, 0.6));
+    hoodLever.position.set(sx + 0.36, sy - 0.72, sz + 0.62);
+    g.add(hoodLever);
+    this.clickable([hoodLever], () => 'Hood release', () => {
+      const hood = this.car.model.parts.hood;
+      if (hood && hood.state !== 'detached') {
+        hood.userOpen = !hood.userOpen;
+        this.game.audio?.clunk?.(this.car, 0.4);
+        if (hood.userOpen) this.game.toast('Hood unlatched — it will fly up if you drive fast!', 'warn');
+      }
+    });
+    // trunk & fuel door releases on the floor by the seat
+    this.trunkBtn = this.button(g, sx + 0.33, sy - 0.62, sz + 0.05, 0.03, 0.015, 0x333333, null, () => 'Trunk release', () => {
+      const t = this.car.model.parts.trunk;
+      if (t && t.state !== 'detached') t.userOpen = !t.userOpen;
+      this.game.audio?.clunk?.(this.car, 0.3);
+    });
+    this.fuelBtn = this.button(g, sx + 0.33, sy - 0.62, sz - 0.02, 0.03, 0.015, 0x333333, null, () => `Fuel door: <b>${this.car.sys.fuelDoor ? 'open' : 'closed'}</b>`, () => {
+      this.car.sys.fuelDoor = !this.car.sys.fuelDoor;
+      this.game.audio?.click?.();
+    });
+    // cruise control stalk (lower right of the column)
+    const cstalk = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.009, 0.11, 8), mat(0x222222, 0.6));
+    cstalk.rotation.z = -Math.PI / 2 + 0.5;
+    cstalk.position.set(-0.11, -0.04, 0.12);
+    this.wheelPivot.add(cstalk);
+    this.clickable([cstalk], () => {
+      const cr = this.car.ext.cruise;
+      return cr.on ? `Cruise: <b>${this.game.fmtSpeed(cr.speed)}</b> — click to cancel` : 'Cruise control: set (<kbd>O</kbd>)';
+    }, () => this.game.toggleCruise(this.car));
+    // choke knob on carburettor cars
+    if (car.phys.pt.spec.carb) {
+      const choke = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.03, 10), mat(0xd8d2c0, 0.5));
+      choke.rotation.x = Math.PI / 2;
+      choke.position.set(sx + 0.2, sy - 0.45, sz + 0.66);
+      g.add(choke);
+      this.chokeKnob = choke;
+      this.clickable([choke], () => `Choke: <b>${this.car.phys.pt.choke > 0.5 ? 'pulled out' : 'in'}</b> (cold starts)`, () => {
+        const pt = this.car.phys.pt;
+        pt.choke = pt.choke > 0.5 ? 0 : 1;
+        this.game.audio?.click?.();
+      });
+    }
 
     // ---- centre stack: hazard, screen, climate ----
     const stackZ = sz + 0.66;
@@ -272,6 +360,62 @@ export class Interior {
       this.car.sys.defrost = !this.car.sys.defrost;
       this.game.audio?.click?.();
     });
+    const cy = sy - 0.47, cz = stackZ - 0.065;
+    this.rearDefBtn = this.button(climate, 0.06, 0, -0.013, 0.045, 0.028, 0x333333, [1, 0.55, 0.1], () => `Rear window defrost: <b>${this.car.sys.rearDefrost ? 'on' : 'off'}</b>`, () => (this.car.sys.rearDefrost = !this.car.sys.rearDefrost), true);
+    this.acBtn = this.button(climate, 0, 0, -0.013, 0.04, 0.028, 0x333333, [0.2, 0.7, 1], () => `A/C: <b>${this.car.sys.ac ? 'on' : 'off'}</b> (dries the air, loads the engine)`, () => (this.car.sys.ac = !this.car.sys.ac), true);
+    // fan and temperature knobs
+    const knobGeo = new THREE.CylinderGeometry(0.022, 0.024, 0.02, 16);
+    knobGeo.rotateX(Math.PI / 2);
+    this.fanKnob = new THREE.Mesh(knobGeo, trim);
+    this.fanKnob.position.set(0.09, cy - 0.045, cz);
+    this.tempKnob = new THREE.Mesh(knobGeo, trim);
+    this.tempKnob.position.set(-0.09, cy - 0.045, cz);
+    for (const k of [this.fanKnob, this.tempKnob]) {
+      const mark = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.014, 0.003), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      mark.position.set(0, 0.01, -0.011);
+      k.add(mark);
+      g.add(k);
+    }
+    this.clickable([this.fanKnob], () => `Fan: <b>${['off', '1', '2', '3'][this.car.sys.fan]}</b>`, () => {
+      this.car.sys.fan = (this.car.sys.fan + 1) % 4;
+      this.game.audio?.click?.();
+    });
+    this.clickable([this.tempKnob], (hit) => `Temperature: <b>${this.car.sys.climateTemp}°C</b> — click ${this.knobSide(this.tempKnob, hit) > 0 ? 'warmer' : 'cooler'}`, (hit) => {
+      const s2 = this.car.sys;
+      s2.climateTemp = clamp(s2.climateTemp + (this.knobSide(this.tempKnob, hit) > 0 ? 1 : -1), 16, 28);
+      this.game.audio?.click?.();
+    });
+    // console buttons: drive mode, traction control, parking brake, mirror fold
+    const by = sy - 0.53, bz = sz + 0.5;
+    this.modeBtn = this.button(g, 0.07, by, bz, 0.04, 0.02, 0x2a2a2a, [0.2, 0.9, 0.3], () => `Drive mode: <b>${this.car.phys.pt.mode.toUpperCase()}</b> (<kbd>,</kbd>)`, () => {
+      const order = ['eco', 'normal', 'sport'];
+      const pt = this.car.phys.pt;
+      pt.mode = order[(order.indexOf(pt.mode) + 1) % 3];
+    });
+    this.tcsBtn = this.button(g, -0.07, by, bz, 0.04, 0.02, 0x2a2a2a, [1, 0.6, 0.1], () => `Traction &amp; stability control: <b>${this.car.tuning.assists.tcs ? 'on' : 'OFF'}</b>`, () => {
+      const a = this.car.tuning.assists;
+      a.tcs = !a.tcs;
+      a.esc = a.tcs;
+      this.game.toast(a.tcs ? 'TCS / ESC on' : 'TCS / ESC OFF — good luck');
+    });
+    if (car.cfg.body !== 'classic') {
+      this.epbBtn = this.button(g, 0, by - 0.01, bz - 0.12, 0.035, 0.02, 0x2a2a2a, [1, 0.15, 0.1], () => `Electronic parking brake: <b>${this.car.parkLever ? 'applied' : 'released'}</b>`, () => {
+        this.car.parkLever = !this.car.parkLever;
+        this.game.audio?.ratchet?.();
+      });
+    }
+    this.foldBtn = this.button(g, sx + 0.25, sy - 0.47, sz + 0.62, 0.03, 0.018, 0x2a2a2a, null, () => `Mirrors: <b>${this.car.sys.mirrorsFolded ? 'folded' : 'out'}</b>`, () => (this.car.sys.mirrorsFolded = !this.car.sys.mirrorsFolded));
+    // radio volume knob on the screen bezel
+    const vol = new THREE.Mesh(knobGeo, alu);
+    vol.position.set(0.15, sy - 0.36, stackZ - 0.025);
+    g.add(vol);
+    this.volKnob = vol;
+    this.clickable([vol], (hit) => `Radio volume: <b>${Math.round((this.game.settings.radioVolume || 0) * 100)}%</b> — click ${this.knobSide(vol, hit) > 0 ? 'louder' : 'quieter'}`, (hit) => {
+      const st = this.game.settings;
+      st.radioVolume = clamp((st.radioVolume || 0) + (this.knobSide(vol, hit) > 0 ? 0.1 : -0.1), 0, 1);
+      this.game.audio?.applyVolumes?.();
+      this.game.audio?.click?.();
+    });
 
     // ---- centre console, gear selector, handbrake ----
     const consoleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.75), dark);
@@ -288,13 +432,17 @@ export class Interior {
     g.add(this.shifter);
     this.clickable([shaft, knobG], () => {
       const pt = this.car.phys.pt;
-      if (!pt.auto) return `Gear: <b>${pt.gear < 0 ? 'R' : pt.gear === 0 ? 'N' : pt.gear}</b> (<kbd>Z</kbd>/<kbd>X</kbd>)`;
+      if (!pt.auto) return `Gear: <b>${pt.gear < 0 ? 'R' : pt.gear === 0 ? 'N' : pt.gear}</b> — click front to shift up, back to shift down (or <kbd>1</kbd>-<kbd>${pt.gearCount}</kbd>)`;
       return `Gear selector: <b>${pt.selector}</b> → click to change`;
-    }, () => {
+    }, (hit) => {
       const pt = this.car.phys.pt;
       if (!pt.auto) {
-        pt.auto = true;
-        pt.setSelector('D');
+        // push the lever forward (front half) to shift up, pull back to shift down
+        const local = hit ? this.shifter.worldToLocal(hit.point.clone()) : new THREE.Vector3();
+        if (local.z > 0) pt.shiftUp();
+        else if (pt.gear <= 1) pt.shiftTo(pt.gear - 1);
+        else pt.shiftDown();
+        this.game.audio?.click?.();
         return;
       }
       const order = ['P', 'R', 'N', 'D'];
@@ -317,27 +465,12 @@ export class Interior {
       this.car.parkLever = !this.car.parkLever;
       this.game.audio?.ratchet?.();
     });
-    // pedals
+    // pedals (rebuilt when the gearbox changes: the third pedal comes and goes)
     this.pedals = [];
-    const nPedals = this.car.phys.pt.auto ? 2 : 3;
-    for (let k = 0; k < 3; k++) {
-      if (nPedals === 2 && k === 0) {
-        this.pedals.push(null);
-        continue;
-      }
-      const p = new THREE.Group();
-      p.position.set(sx + 0.12 - k * 0.1 - (k === 2 ? 0.02 : 0), sy - 0.82, sz + 0.86);
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(k === 1 && nPedals === 2 ? 0.1 : 0.06, 0.08, 0.012), alu);
-      pad.position.set(0, -0.08, 0);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.12, 0.012), dark);
-      arm.position.set(0, -0.02, 0.01);
-      p.add(pad, arm);
-      g.add(p);
-      this.pedals.push(p);
-    }
+    this.buildPedals();
 
     // ---- seats ----
-    for (const x of [sx, -sx]) this.addSeat(g, x, sy, sz, leather);
+    for (const x of [sx, -sx]) this.addSeat(g, x, sy, sz, leather, car.cfg.seats === 'bucket');
     const bench = new THREE.Mesh(new THREE.BoxGeometry(hwCab * 1.7, 0.18, 0.55), leather);
     bench.position.set(0, sy - 0.66, sz - 0.95);
     if (b.doors.RL || b.kind === 'Sport sedan' || b.kind === 'SUV') g.add(bench);
@@ -490,15 +623,88 @@ export class Interior {
     this.driverHead = car.model.details.driver;
   }
 
-  addSeat(g, x, sy, sz, m) {
+  addSeat(g, x, sy, sz, m, bucket = false) {
     const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), m);
     cushion.position.set(x, sy - 0.66, sz + 0.02);
-    const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.12), m);
-    backrest.position.set(x, sy - 0.3, sz - 0.28);
+    const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.5, bucket ? 0.82 : 0.62, 0.12), m);
+    backrest.position.set(x, sy - (bucket ? 0.22 : 0.3), sz - 0.28);
     backrest.rotation.x = -0.18;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.09), m);
-    head.position.set(x, sy + 0.08, sz - 0.34);
-    g.add(cushion, backrest, head);
+    g.add(cushion, backrest);
+    if (bucket) {
+      // side bolsters and harness slots
+      for (const s of [1, -1]) {
+        const bol = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 0.2), m);
+        bol.position.set(x + s * 0.24, sy - 0.25, sz - 0.24);
+        bol.rotation.x = -0.18;
+        const cb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.45), m);
+        cb.position.set(x + s * 0.24, sy - 0.58, sz + 0.02);
+        g.add(bol, cb);
+      }
+    } else {
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.09), m);
+      head.position.set(x, sy + 0.08, sz - 0.34);
+      g.add(head);
+    }
+  }
+
+  buildPedals() {
+    const { dark, alu } = this.mats;
+    const b = this.prof.b;
+    const { x: sx, y: sy, z: sz } = b.seat;
+    for (const p of this.pedals) if (p) p.parent?.remove(p);
+    this.pedals = [];
+    const pt = this.car.phys.pt;
+    const nPedals = pt.auto || pt.ev ? 2 : 3;
+    this.pedalCount = nPedals;
+    for (let k = 0; k < 3; k++) {
+      if (nPedals === 2 && k === 0) {
+        this.pedals.push(null);
+        continue;
+      }
+      const p = new THREE.Group();
+      p.position.set(sx + 0.12 - k * 0.1 - (k === 2 ? 0.02 : 0), sy - 0.82, sz + 0.86);
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(k === 1 && nPedals === 2 ? 0.1 : 0.06, 0.08, 0.012), alu);
+      pad.position.set(0, -0.08, 0);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.12, 0.012), dark);
+      arm.position.set(0, -0.02, 0.01);
+      p.add(pad, arm);
+      this.group.add(p);
+      this.pedals.push(p);
+    }
+  }
+
+  /** A small push button with an optional indicator LED colour. */
+  button(parent, x, y, z, w, h, color, led, label, action, raw = false) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.012), new THREE.MeshStandardMaterial({ color, roughness: 0.5, emissive: led ? new THREE.Color(...led) : new THREE.Color(0, 0, 0), emissiveIntensity: 0 }));
+    m.position.set(x, y, z);
+    if (!raw) m.rotation.x = 0.3;
+    parent.add(m);
+    this.clickable([m], label, (hit) => {
+      action(hit);
+      this.game.audio?.click?.();
+    });
+    return m;
+  }
+
+  /** Which side of a round knob was clicked (+1 right/clockwise, -1 left). */
+  knobSide(knob, hit) {
+    if (!hit) return 1;
+    const p = knob.worldToLocal(hit.point.clone());
+    return p.x < 0 ? 1 : -1;
+  }
+
+  /** After a repair: clear cracks, refold the airbag, restore the glass overlay. */
+  reset() {
+    this.cracks.length = 0;
+    this.drops.length = 0;
+    this.fog = 0;
+    this.rearFog = 0;
+    this.airbag = 0;
+    if (this.airbagMesh) {
+      this.airbagMesh.visible = false;
+      this.airbagMesh.scale.setScalar(1);
+    }
+    if (this.wsOverlay) this.wsOverlay.visible = true;
   }
 
   stalkLocal(stalk, hit) {
@@ -547,7 +753,7 @@ export class Interior {
   update(dt, input) {
     const car = this.car;
     const game = this.game;
-    const cockpit = game.cam.mode === 'cockpit';
+    const cockpit = game.cam.interior;
     this.t += dt;
     this.group.visible = true;
     const head = car.model.details.driver;
@@ -611,9 +817,28 @@ export class Interior {
     const hb = car.phys.input.handbrake > 0 || car.parkLever ? 0.35 : 0;
     this.handbrake.rotation.x = damp(this.handbrake.rotation.x, -hb, 15, dt);
     car.phys.parkBrake = car.phys.parkBrake || !!car.parkLever;
-    // pedals
+    // pedals (third pedal appears when you switch to manual)
     const inp = car.phys.input;
-    if (this.pedals[0]) this.pedals[0].rotation.x = pt.clutch < 0.9 && pt.gear !== 0 ? 0.3 : 0;
+    if ((pt.auto || pt.ev ? 2 : 3) !== this.pedalCount) this.buildPedals();
+    if (this.pedals[0]) this.pedals[0].rotation.x = damp(this.pedals[0].rotation.x, pt.manualClutch ? pt.clutchPedal * 0.35 : pt.clutch < 0.9 && pt.gear !== 0 ? 0.3 : 0, 20, dt);
+    // buttons and their LEDs
+    const led = (m, on, k = 2.2) => m && (m.material.emissiveIntensity = on && car.electrics ? k : 0);
+    led(this.fogBtn, s.fog > 0);
+    led(this.rearDefBtn, s.rearDefrost);
+    led(this.acBtn, s.ac);
+    led(this.modeBtn, pt.mode !== 'normal');
+    if (this.modeBtn) this.modeBtn.material.emissive.setRGB(pt.mode === 'sport' ? 1 : 0.2, pt.mode === 'sport' ? 0.3 : 0.9, 0.2);
+    led(this.tcsBtn, !car.tuning.assists.tcs);
+    led(this.epbBtn, !!car.parkLever);
+    if (this.startBtn) this.startBtn.material.emissiveIntensity = pt.running ? 1.5 : 0.25 + Math.sin(this.t * 3) * 0.15;
+    if (this.fanKnob) this.fanKnob.rotation.z = damp(this.fanKnob.rotation.z, -s.fan * 0.7, 12, dt);
+    if (this.tempKnob) this.tempKnob.rotation.z = damp(this.tempKnob.rotation.z, -(s.climateTemp - 22) * 0.18, 12, dt);
+    if (this.chokeKnob) this.chokeKnob.position.z = damp(this.chokeKnob.position.z, this.prof.b.seat.z + 0.66 - pt.choke * 0.03, 12, dt);
+    // folding mirrors
+    for (const m of car.model.details.mirrors) if (m.group && m.attached !== false) m.group.rotation.y = damp(m.group.rotation.y, s.mirrorsFolded ? (m.side > 0 ? 1.2 : -1.2) : 0, 6, dt);
+    // dome light comes on with the door open
+    const doorOpen = car.model.parts.doorFL && car.model.parts.doorFL.userOpen;
+    this.domeAuto = !!doorOpen && car.electrics !== undefined;
     if (this.pedals[1]) this.pedals[1].rotation.x = damp(this.pedals[1].rotation.x, inp.brake * 0.35, 20, dt);
     if (this.pedals[2]) this.pedals[2].rotation.x = damp(this.pedals[2].rotation.x, inp.throttle * 0.35, 20, dt);
     // belt
@@ -626,8 +851,11 @@ export class Interior {
       }
     }
     // dome
-    this.domeMesh.material.emissiveIntensity = s.dome ? 3 : 0;
-    this.domeLight.intensity = s.dome ? 0.9 : 0;
+    const domeOn = (s.dome || this.domeAuto) && !car.electricsDead && car.ext.battery > 0.04;
+    this.domeMesh.material.emissiveIntensity = domeOn ? 3 : 0;
+    this.domeLight.intensity = domeOn ? 0.9 : 0;
+    // sun glare: low sun in front of you washes out the view unless the visor is down
+    this.updateGlare(cockpit);
     // visor / glovebox
     this.visorGroup.rotation.x = damp(this.visorGroup.rotation.x, this.visor ? 1.35 : 0, 10, dt);
     this.glove.rotation.x = damp(this.glove.rotation.x, this.gloveOpen ? 0.9 : 0, 10, dt);
@@ -683,6 +911,21 @@ export class Interior {
       hud.hover(c.label(hit) + (m.locked ? '' : ' — click to grab the mouse'));
       if (m.clicked[0] && m.locked) c.action(hit);
     } else hud.hover(null);
+  }
+
+  updateGlare(cockpit) {
+    const env = this.game.env;
+    const hud = this.game.hud;
+    let g = 0;
+    if (cockpit && env.sunDir && env.sunDir.y > 0.02 && env.sunDir.y < 0.45 && env.cloud < 0.7) {
+      const f = this.game.camera.getWorldDirection(_v);
+      const a = f.dot(env.sunDir);
+      g = Math.max(0, (a - 0.86) / 0.14) * (1 - env.cloud) * (1 - env.fogAmount);
+      // visor blocks it when the sun is high enough to be behind it
+      if (this.visor && env.sunDir.y > 0.08) g *= 0.12;
+    }
+    this.glare = g;
+    hud.glare?.(g);
   }
 
   // ---------------------------------------------------------------- displays
@@ -757,8 +1000,41 @@ export class Interior {
       ctx.fillText(label, 0, r * 0.4);
       ctx.restore();
     };
-    dial(190, 192, 175, pt.rpm, maxRpm, pt.ev ? 2000 : 1000, pt.ev ? 'x1000 RPM' : 'x1000 RPM', pt.ev ? null : pt.spec.redline, true);
-    dial(834, 192, 175, speed, maxSpeed, units === 'mph' ? 20 : 20, units === 'mph' ? 'MPH' : 'KM/H', null, false);
+    const digital = car.cfg.gauges === 'digital';
+    if (digital) {
+      // digital: bar-graph tach arc + big numbers
+      ctx.save();
+      for (let i = 0; i < 48; i++) {
+        const f = i / 48;
+        const lit = f < Math.max(pt.rpm / maxRpm, sweep);
+        const red = !pt.ev && f * maxRpm > pt.spec.redline;
+        ctx.fillStyle = lit ? (red ? '#ff3030' : f > 0.7 ? '#ffb020' : '#3ce3c8') : '#14181d';
+        const a = Math.PI * 0.85 + f * Math.PI * 1.3;
+        ctx.save();
+        ctx.translate(190 + Math.cos(a) * 150, 200 + Math.sin(a) * 150);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.fillRect(-5, -14, 10, 28);
+        ctx.restore();
+      }
+      ctx.fillStyle = '#e8edf2';
+      ctx.font = '800 64px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(Math.round(pt.rpm / 100) * 100), 190, 200);
+      ctx.font = '600 18px sans-serif';
+      ctx.fillStyle = '#8b97a3';
+      ctx.fillText('RPM', 190, 248);
+      ctx.fillStyle = '#e8edf2';
+      ctx.font = '800 110px sans-serif';
+      ctx.fillText(String(Math.round(Math.max(speed, sweep * maxSpeed))), 834, 190);
+      ctx.font = '600 22px sans-serif';
+      ctx.fillStyle = '#8b97a3';
+      ctx.fillText(units === 'mph' ? 'MPH' : 'KM/H', 834, 262);
+      ctx.restore();
+    } else {
+      dial(190, 192, 175, pt.rpm, maxRpm, pt.ev ? 2000 : 1000, pt.ev ? 'x1000 RPM' : 'x1000 RPM', pt.ev ? null : pt.spec.redline, true);
+      dial(834, 192, 175, speed, maxSpeed, units === 'mph' ? 20 : 20, units === 'mph' ? 'MPH' : 'KM/H', null, false);
+    }
     // centre display
     ctx.fillStyle = '#0b0e12';
     roundRect(ctx, 392, 40, 240, 304, 16);
@@ -766,46 +1042,95 @@ export class Interior {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     let gear;
-    if (pt.auto) gear = pt.selector === 'D' && !pt.ev ? 'D' + pt.gear : pt.selector;
+    if (pt.ev) gear = pt.running ? (pt.selector === 'P' ? 'P' : pt.selector) : 'P';
+    else if (pt.auto) gear = pt.selector === 'D' ? 'D' + pt.gear : pt.selector;
     else gear = pt.gear < 0 ? 'R' : pt.gear === 0 ? 'N' : String(pt.gear);
     ctx.fillStyle = '#fff';
-    ctx.font = '800 84px sans-serif';
-    ctx.fillText(gear, 512, 120);
-    ctx.font = '700 44px sans-serif';
-    ctx.fillText(`${Math.round(speed)}`, 512, 200);
+    ctx.font = '800 76px sans-serif';
+    ctx.fillText(gear, 512, 108);
+    // mode / cruise line
+    const ext = car.ext;
+    ctx.font = '700 16px sans-serif';
+    const tags = [];
+    if (pt.mode !== 'normal') tags.push([pt.mode.toUpperCase(), pt.mode === 'sport' ? '#ff6a1f' : '#3ce36a']);
+    if (ext.cruise.on) tags.push([`CRUISE ${Math.round(ext.cruise.speed * (units === 'mph' ? MPH : KMH))}`, '#3ce36a']);
+    if (ext.limiter.on) tags.push([`LIM ${Math.round(ext.limiter.speed * (units === 'mph' ? MPH : KMH))}`, '#ffb020']);
+    if (pt.ev) tags.push([pt.running ? 'READY' : '', '#3aa0ff'], [`REGEN ${pt.regenLevel}`, '#8b97a3']);
+    if (s.headlights === 3) tags.push(['AUTO', '#3ce36a']);
+    if (pt.launchArmed) tags.push(['LAUNCH', '#ff3030']);
+    tags.filter((t) => t[0]).forEach((t, i, arr) => {
+      ctx.fillStyle = t[1];
+      ctx.fillText(t[0], 512 + (i - (arr.length - 1) / 2) * 76, 160);
+    });
+    // trip computer page
+    const page = this.tripPage || 0;
+    const tr = ext.trip;
+    const dist = (km) => (units === 'mph' ? `${(km * 0.6214).toFixed(1)} mi` : `${km.toFixed(1)} km`);
+    const cons = (v) => (pt.ev ? `${v.toFixed(1)} kWh/100km` : units === 'mph' ? `${v > 0.1 ? (235.2 / v).toFixed(1) : '—'} mpg` : `${v.toFixed(1)} L/100km`);
+    const pages = [
+      ['TRIP A', dist(tr.a)],
+      ['TRIP B', dist(tr.b)],
+      ['AVG', cons(tr.avg)],
+      ['NOW', cons(tr.inst)],
+      ['RANGE', dist(tr.range)],
+      ['BATTERY', `${ext.volts.toFixed(1)} V`],
+      ['TYRES', car.phys.wheels.map((w) => Math.round(w.temp)).join(' / ') + '°'],
+      ['ODO', dist(ext.odo)],
+    ];
+    const [pl, pv] = pages[page % pages.length];
+    ctx.fillStyle = '#8b97a3';
+    ctx.font = '600 15px sans-serif';
+    ctx.fillText(pl, 512, 198);
+    ctx.fillStyle = '#e8edf2';
+    ctx.font = '700 30px sans-serif';
+    ctx.fillText(pv, 512, 228);
     ctx.font = '600 16px sans-serif';
     ctx.fillStyle = '#8b97a3';
-    ctx.fillText(units === 'mph' ? 'mph' : 'km/h', 512, 230);
-    const odo = (this.game.stats.distance / 1000).toFixed(1);
-    ctx.fillText(`TRIP ${odo} km   ${Math.round(pt.temp)}°C`, 512, 268);
+    ctx.fillText(`${Math.round(speed)} ${units === 'mph' ? 'mph' : 'km/h'}   ${Math.round(pt.temp)}°C   ${this.game.env.hour ? String(Math.floor(this.game.env.hour)).padStart(2, '0') + ':' + String(Math.floor((this.game.env.hour % 1) * 60)).padStart(2, '0') : ''}`, 512, 262);
     const street = this.game.hud.lastStreet || '';
     ctx.fillStyle = '#c7d0da';
-    ctx.fillText(street.slice(0, 22), 512, 300);
-    // fuel & temp bars
+    ctx.fillText(street.slice(0, 22), 512, 292);
+    // fuel (lagging needle) & temp bars
     const bar = (x, y, v, col) => {
       ctx.fillStyle = '#1a1e24';
       ctx.fillRect(x, y, 90, 8);
       ctx.fillStyle = col;
       ctx.fillRect(x, y, 90 * clamp(v, 0, 1), 8);
     };
-    bar(412, 322, Math.max(pt.fuel / 55, sweep), pt.fuel < 6 ? '#ff4040' : '#8fd14f');
+    const fuelV = ext.fuelNeedle;
+    bar(412, 322, Math.max(fuelV, sweep), fuelV < 0.12 ? '#ff4040' : pt.ev ? '#3aa0ff' : '#8fd14f');
     bar(522, 322, Math.max((pt.temp - 40) / 90, sweep), pt.temp > 112 ? '#ff4040' : '#37c8ff');
+    ctx.font = '600 12px sans-serif';
+    ctx.fillStyle = '#8b97a3';
+    ctx.fillText(pt.ev ? `${Math.round(pt.energyFrac * 100)}%` : 'FUEL', 457, 340);
+    ctx.fillText('TEMP', 567, 340);
     // warning lights (bulb check during sweep)
     const bulb = this.sweep > 0.2;
-    const warn = (x, y, txt, onc, col) => {
+    const blinkFast = Math.floor(this.t * 6) % 2 === 0;
+    const warn = (x, y, txt, onc, col, size = 17) => {
       ctx.fillStyle = onc || bulb ? col : '#1c1f24';
-      ctx.font = '700 17px sans-serif';
+      ctx.font = `700 ${size}px sans-serif`;
       ctx.fillText(txt, x, y);
     };
+    const flatTyre = car.phys.wheels.some((w) => w.flat > 0.5 || w.wear > 0.85);
     warn(90, 350, '◀', s.blinkOn && (s.indicator === 'left' || s.hazard), '#3ce36a');
     warn(290, 350, '▶', s.blinkOn && (s.indicator === 'right' || s.hazard), '#3ce36a');
     warn(160, 350, 'ABS', car.phys.absActive, '#ffb020');
-    warn(220, 350, 'TCS', car.phys.tcsActive, '#ffb020');
-    warn(734, 350, '⚙', pt.health < 0.5 || !pt.running, '#ffb020');
+    warn(222, 350, car.tuning.assists.tcs ? 'ESC' : 'ESC OFF', (car.phys.escActive || car.phys.tcsActive) && blinkFast || !car.tuning.assists.tcs, '#ffb020', 15);
+    warn(734, 350, '⚙', pt.health < 0.5 || pt.misfire || pt.hydrolocked || (!pt.running && !pt.ev), '#ffb020');
     warn(794, 350, 'BELT', !s.seatbelt, '#ff4040');
     warn(864, 350, '(P)', car.phys.input.handbrake > 0 || car.phys.parkBrake, '#ff4040');
-    warn(934, 350, '≣D', s.high && s.headlights === 2, '#3aa0ff');
-    warn(512, 22, 'OIL', pt.health < 0.25, '#ff4040');
+    warn(934, 350, '≣D', s.high && s.lightLevel === 2, '#3aa0ff');
+    warn(84, 30, '≢D', s.fog >= 1, '#3ce36a', 15);
+    warn(140, 30, 'O≢', s.fog >= 2, '#ffb020', 15);
+    warn(512, 22, 'OIL', pt.oil < 0.25 || (pt.running && pt.health < 0.25), '#ff4040', 15);
+    warn(890, 30, '🔋', ext.amps < -5 && pt.running || ext.volts < 11.6, '#ff4040', 15);
+    warn(946, 30, '🌡', pt.temp > 112 || pt.coolant < 0.4, '#ff4040', 15);
+    warn(836, 30, '⛽', fuelV < 0.12, '#ffb020', 15);
+    warn(780, 30, '(!)', flatTyre, '#ffb020', 15);
+    warn(724, 30, 'SVC', ext.odo > ext.serviceAt, '#ffb020', 14);
+    warn(200, 30, '🔥', ext.fire > 0 && blinkFast, '#ff3030', 15);
+    warn(260, 30, 'DOOR', !!(car.model.parts.doorFL && car.model.parts.doorFL.userOpen), '#ff4040', 14);
     // shift light
     if (!pt.ev) {
       const f = clamp((pt.rpm - pt.spec.redline * 0.8) / (pt.spec.redline * 0.2), 0, 1);
@@ -815,7 +1140,12 @@ export class Interior {
         ctx.fillRect(412 + i * 21, 16, 16, 8);
       }
     }
-    this.clusterMat.color.setScalar(0.55 + 0.45 * glow);
+    // electrical fault: the cluster flickers
+    if (ext.flicker) {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillRect(0, 0, W, H);
+    }
+    this.clusterMat.color.setScalar((0.55 + 0.45 * glow) * clamp((ext.volts - 10) / 2.2, 0.3, 1));
     this.clusterTex.needsUpdate = true;
   }
 
@@ -923,10 +1253,17 @@ export class Interior {
     this.drops = this.drops.filter((d) => d.y > -5);
     // washer fluid
     if (s.washer > 0) this.fog = Math.max(0, this.fog - dt * 0.3);
-    // condensation builds in rain / cold mornings without defrost
-    const humid = (env.rain > 0.2 ? 0.02 : 0) + (env.hour < 8 ? 0.006 : 0);
-    if (s.defrost) this.fog = Math.max(0, this.fog - dt * 0.12);
-    else this.fog = Math.min(0.6, this.fog + humid * dt);
+    // condensation builds in rain / cold mornings; the fan clears it, A/C dries the air,
+    // and cold air on a wet day fogs the glass (warm it up or use defrost)
+    const humid = (env.rain > 0.2 ? 0.02 : 0) + (env.hour < 8 ? 0.006 : 0) + (s.climateTemp < 19 && env.rain > 0.2 ? 0.012 : 0);
+    const clear = (s.defrost ? 0.12 : 0) + s.fan * 0.012 + (s.ac ? 0.02 : 0);
+    if (clear > humid) this.fog = Math.max(0, this.fog - (clear - humid) * dt);
+    else this.fog = Math.min(0.6, this.fog + (humid - clear) * dt);
+    // rear window: fogs the rear-view mirror image
+    this.rearFog = this.rearFog || 0;
+    if (s.rearDefrost && car.electrics) this.rearFog = Math.max(0, this.rearFog - dt * 0.08);
+    else this.rearFog = Math.min(0.7, this.rearFog + humid * 0.8 * dt);
+    if (this.mirrorMat) this.mirrorMat.color.setScalar(1 - this.rearFog * 0.35);
     // draw
     ctx.clearRect(0, 0, W, H);
     if (this.fog > 0.01) {
@@ -951,7 +1288,7 @@ export class Interior {
 
   // ---------------------------------------------------------------- mirrors
   renderMirrors(renderer) {
-    if (this.game.cam.mode !== 'cockpit' || this.game.state !== 'play') return;
+    if (!this.game.cam.interior || this.game.state !== 'play') return;
     this.mirrorFrame++;
     if (this.mirrorFrame % 2) return;
     const car = this.car;

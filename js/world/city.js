@@ -602,6 +602,26 @@ export class City {
         world.addBox(x - 1.2, 0, z - 0.4, x + 1.2, 1.9, z + 0.4, { kind: 'pump' });
         this.pumps.push(new THREE.Vector3(x, 0, z + 3), new THREE.Vector3(x, 0, z - 3));
       }
+      // EV fast chargers along the west edge of the forecourt
+      this.chargers = [];
+      const chMat = new THREE.MeshStandardMaterial({ color: 0xe9eef2, roughness: 0.4, metalness: 0.2 });
+      const chScreen = new THREE.MeshStandardMaterial({ color: 0x062033, emissive: new THREE.Color(0.1, 0.6, 1), emissiveIntensity: 0.6 });
+      for (let k = 0; k < 2; k++) {
+        const x = cx - 22, z = cz - 6 + k * 8;
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.45), chMat);
+        post.position.set(x, 0.9, z);
+        const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3), chScreen);
+        scr.position.set(x + 0.31, 1.35, z);
+        scr.rotation.y = Math.PI / 2;
+        const cable = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 6, 14, Math.PI * 1.4), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+        cable.position.set(x + 0.32, 0.8, z + 0.1);
+        cable.rotation.y = Math.PI / 2;
+        this.group.add(post, scr, cable);
+        world.addBox(x - 0.3, 0, z - 0.25, x + 0.3, 1.8, z + 0.25, { kind: 'pump' });
+        this.chargers.push(new THREE.Vector3(x + 2.8, 0, z));
+        this.nightMats.push({ mat: chScreen, min: 0.6, max: 1.4 });
+      }
+      this.signBoard(cx - 22, cz - 12, 'EV CHARGE', '#1b6fa8', 4, 3.2);
       addBuilding(ix0 + 10, iz1 - 16, ix1 - 10, iz1 - 2, 5, 'modern', { base: 0, shops: ['s'] });
       this.signBoard(cx + 30, cz - 32, 'FUEL STOP', '#c21f1f', 8);
     } else if (b.type === 'garage') {

@@ -740,7 +740,7 @@ export function buildCarModel(cfg, tuning, opts = {}) {
       style: cfg.wheelStyle,
       color: cfg.wheelColor,
       left: w.left,
-      caliperColor: npc ? '#505358' : cfg.body === 'coupe' || cfg.tune > 1 ? '#c8161d' : '#6a6d72',
+      caliperColor: npc ? '#505358' : cfg.caliperColor || (cfg.body === 'coupe' || cfg.tune > 1 ? '#c8161d' : '#6a6d72'),
       shared: npc,
     });
     root.add(wh.group);
@@ -792,6 +792,29 @@ export function buildCarModel(cfg, tuning, opts = {}) {
     com: tuning.com.clone(),
     npc,
     deformVersion: 0,
+  };
+  // paint ageing: dirt and fire damage both work on the paint material
+  const paintBase = paint.color.clone();
+  const paintRough = paint.roughness;
+  const paintClear = paint.clearcoat ?? 0;
+  const dirtCol = new THREE.Color(0.32, 0.27, 0.2);
+  const charCol = new THREE.Color(0.04, 0.035, 0.03);
+  let dirt = 0, char = 0;
+  const repaint = () => {
+    paint.color.copy(paintBase).lerp(dirtCol, dirt * 0.45).lerp(charCol, char);
+    paint.roughness = Math.min(1, paintRough + dirt * 0.45 + char * 0.6);
+    if (paint.clearcoat !== undefined) paint.clearcoat = paintClear * (1 - dirt * 0.7) * (1 - char);
+    if (char > 0) paint.metalness = Math.max(0, paint.metalness * (1 - char * 0.02));
+  };
+  model.setDirt = (d) => {
+    if (Math.abs(d - dirt) < 0.01 && d !== 0) return;
+    dirt = d;
+    repaint();
+  };
+  model.setChar = (c) => {
+    if (Math.abs(c - char) < 0.01 && c !== 0) return;
+    char = c;
+    repaint();
   };
   model.applyDeformation = () => {
     for (const p of allParts) if (p.state !== 'detached' && p.state !== 'shattered') p.deform(lattice, npc ? 0.06 : 0.08);
@@ -864,7 +887,7 @@ function buildLights(cfg, prof, design, parts, npc) {
   const b = prof.b;
   const headColor = { halogen: 0xfff1d6, xenon: 0xeef4ff, blue: 0xbcd4ff, yellow: 0xffe08a }[cfg.headlights] || 0xfff1d6;
   const all = [];
-  const out = { all, head: [], tail: [], indF: [], indR: [], reverse: [], brake3: null, headColor };
+  const out = { all, head: [], tail: [], indF: [], indR: [], reverse: [], fogF: [], fogR: [], brake3: null, headColor };
   const bodyGroup = parts.bumperF ? parts.body.group : design;
   const headTex = lightTexture('head');
   const tailTex = lightTexture('tail');
@@ -894,7 +917,7 @@ function buildLights(cfg, prof, design, parts, npc) {
     // tail light
     const tl = b.tail;
     const tw = tl.x1 - tl.x0;
-    const tmat = new THREE.MeshStandardMaterial({ color: 0x8a0d10, map: tailTex, emissive: new THREE.Color(0xff1010), emissiveMap: tailTex, emissiveIntensity: 0, roughness: 0.15, metalness: 0.2 });
+    const tmat = new THREE.MeshStandardMaterial({ color: cfg.smokedTails ? 0x2a0506 : 0x8a0d10, map: tailTex, emissive: new THREE.Color(0xff1010), emissiveMap: tailTex, emissiveIntensity: 0, roughness: 0.15, metalness: 0.2 });
     const tm = new THREE.Mesh(lampGeometry(tw, tl.h, 0.07, 0.03), tmat);
     const tc = placeOnSkin(prof, tm, s > 0 ? s * tl.x0 : s * tl.x1, s > 0 ? s * tl.x1 : s * tl.x0, tl.y, tl.h, -1);
     bodyGroup.add(tm);
@@ -920,6 +943,37 @@ function buildLights(cfg, prof, design, parts, npc) {
     rvu.side = s;
     out.reverse.push(rvu);
     all.push(rvu);
+  }
+  // fog lamps: two round ones low in the front bumper, one rear fog on the driver's side
+  if (!npc) {
+    const fgeo = new THREE.CylinderGeometry(0.045, 0.045, 0.03, 14);
+    fgeo.rotateX(Math.PI / 2);
+    for (const s of [1, -1]) {
+      const fm = new THREE.MeshStandardMaterial({ color: 0xe8ecf0, emissive: new THREE.Color(0xfff4d8), emissiveIntensity: 0, roughness: 0.1, metalness: 0.3 });
+      const m = new THREE.Mesh(fgeo, fm);
+      const x = s * (prof.hwMax - 0.24), y = 0.3;
+      const z = skinZ(prof, x, y, 1) - 0.005;
+      m.position.set(x, y, z);
+      const grp = parts.bumperF ? parts.bumperF.group : design;
+      grp.add(m);
+      if (parts.bumperF) m.position.sub(parts.bumperF.pivot);
+      const u = new LightUnit(m, fm, grp, new THREE.Vector3(x, y, z));
+      u.side = s;
+      out.fogF.push(u);
+      all.push(u);
+    }
+    const rm = new THREE.MeshStandardMaterial({ color: 0x5a0a0a, emissive: new THREE.Color(0xff1010), emissiveIntensity: 0, roughness: 0.2 });
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.02), rm);
+    const x = prof.hwMax - 0.3, y = 0.36;
+    const z = skinZ(prof, x, y, -1) + 0.008;
+    m.position.set(x, y, z);
+    const grp = parts.bumperR ? parts.bumperR.group : design;
+    grp.add(m);
+    if (parts.bumperR) m.position.sub(parts.bumperR.pivot);
+    const u = new LightUnit(m, rm, grp, new THREE.Vector3(x, y, z));
+    u.side = 1;
+    out.fogR.push(u);
+    all.push(u);
   }
   // third brake light on top of the rear window
   if (!b.zones.bed) {

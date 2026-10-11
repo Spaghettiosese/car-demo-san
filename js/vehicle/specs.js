@@ -164,7 +164,23 @@ export const GEARSETS = {
   6: [3.5, 2.1, 1.45, 1.1, 0.87, 0.71],
   5: [3.4, 2.05, 1.38, 1.0, 0.78],
   7: [3.8, 2.3, 1.6, 1.24, 1.0, 0.84, 0.68],
+  4: [2.9, 1.75, 1.2, 0.92],
 };
+
+/** Each body has its own gearbox character (ratios before the final drive). */
+export const BODY_GEARS = {
+  sedan: [3.5, 2.1, 1.45, 1.1, 0.87, 0.71],
+  hatch: [3.3, 2.15, 1.55, 1.2, 0.98, 0.82], // close ratio
+  muscle: [2.97, 1.78, 1.3, 1.0, 0.74], // wide, torquey 5-speed
+  coupe: [3.6, 2.3, 1.68, 1.3, 1.06, 0.87], // close ratio sports box
+  suv: [4.1, 2.4, 1.55, 1.15, 0.86, 0.68], // low first for towing
+  pickup: [4.4, 2.5, 1.55, 1.0, 0.76], // stump-puller first
+  van: [3.9, 2.2, 1.42, 1.0, 0.8],
+  classic: [2.9, 1.75, 1.2, 0.92], // 4-on-the-floor
+  truck: [5.2, 3.1, 1.95, 1.4, 1.0, 0.78],
+  supercar: [3.1, 2.15, 1.65, 1.32, 1.1, 0.94, 0.8], // 7-speed DCT
+};
+export const BODY_TANKS = { sedan: 60, hatch: 45, muscle: 70, coupe: 55, suv: 80, pickup: 95, van: 80, classic: 50, truck: 120, supercar: 72 };
 
 export const PAINT_PRESETS = [
   '#b01e23', '#e8e8ea', '#101114', '#1f4fa8', '#f2b90c', '#2b7a3c', '#ff6a13', '#6b6f76',
@@ -204,6 +220,31 @@ export const DEFAULT_CONFIG = {
   tcs: true,
   esc: true,
   weightReduction: 0,
+  // v2 tuning
+  tirePressure: 2.2, // bar
+  camber: -1.0, // degrees (front and rear)
+  toe: 0, // degrees, + = toe-in
+  finalMul: 1, // final drive multiplier
+  gearSpacing: 1, // <1 closer ratios, >1 wider
+  lsdPreload: 0.5,
+  boost: 1, // turbo boost controller
+  brakeKit: false,
+  rollCage: false,
+  tireWidth: 0, // -1 narrow, 0 stock, +1 wide
+  wheelOffset: 0, // spacers, m
+  bodyKit: 'stock', // stock | sport | aero
+  hoodScoop: false,
+  flares: false,
+  wheelStyleInterior: 'stock',
+  seats: 'stock', // stock | bucket
+  gauges: 'analog', // analog | digital
+  interiorColor: '#2b2521',
+  raceNumber: '',
+  twoTone: 'none', // none | roof | lower
+  smokedTails: false,
+  exhaustTip: 'round', // round | dual | quad | square
+  underglowMode: 'steady', // steady | pulse | rainbow
+  caliperColor: '#c0392b',
 };
 
 export function configForBody(body, base = DEFAULT_CONFIG) {
@@ -244,13 +285,13 @@ export function buildTuning(cfg) {
   );
 
   const travel = body.travel || [0.14, 0.1];
-  const tireW = tire.width + (cfg.wheelSize - 17) * 0.008;
+  const tireW = tire.width + (cfg.wheelSize - 17) * 0.008 + (cfg.tireWidth || 0) * 0.02;
   const rimR = cfg.wheelSize * 0.0254 * 0.5;
   const wheels = [];
   for (const [id, front, left] of [['FL', true, true], ['FR', true, false], ['RL', false, true], ['RR', false, false]]) {
     const z = front ? zF : zR;
     const hwAt = table(body.hw, z);
-    const track = hwAt * 2 - tireW - 0.07;
+    const track = hwAt * 2 - tireW - 0.07 + (cfg.wheelOffset || 0) * 2;
     const x = (left ? 1 : -1) * track * 0.5;
     const axleLoad = mass * g * (front ? frontWeight : 1 - frontWeight);
     const cornerMass = (axleLoad / g) * 0.5;
@@ -284,12 +325,16 @@ export function buildTuning(cfg) {
   }
   const kF = wheels[0].k, kR = wheels[2].k;
 
-  const gears = GEARSETS[eng.type === 'ev' ? 6 : 6];
+  const base = BODY_GEARS[cfg.body] || GEARSETS[6];
+  // gear spacing keeps first gear and spreads/tightens the rest
+  const sp = cfg.gearSpacing || 1;
+  const gears = base.map((g) => base[0] * Math.pow(g / base[0], sp));
   const topSpeed = body.defaults.gearTop * (cfg.engine === body.defaults.engine ? 1 : eng === ENGINES.v8 ? 1.06 : eng === ENGINES.i4 ? 0.9 : 1);
   let final;
   const rpmToW = (2 * Math.PI) / 60;
   if (eng.type === 'ev') final = (eng.maxRPM * rpmToW * R) / 72;
-  else final = (eng.redline * rpmToW * R) / (topSpeed * gears[gears.length - 1]);
+  else final = (eng.redline * rpmToW * R) / (topSpeed * base[base.length - 1]);
+  final *= cfg.finalMul || 1;
   const turbo = eng.type === 'ev' ? null : TURBOS[cfg.turbo] || null;
   const peakTorque = eng.type === 'ev' ? eng.maxTorque : Math.max(...eng.torque.map((p) => p[1]));
   const powertrain = {
@@ -300,15 +345,19 @@ export function buildTuning(cfg) {
     efficiency: 0.9,
     shiftTime: cfg.gearbox === 'manual' ? 0.15 : 0.2,
     clutchMax: peakTorque * (turbo ? 1 + turbo.gain : 1) * 1.5 * TUNE_STAGES[cfg.tune],
-    turbo,
+    turbo: turbo ? { ...turbo, gain: turbo.gain * (cfg.boost || 1) } : null,
     tune: TUNE_STAGES[cfg.tune] || 1,
     peakTorque,
     antilag: !!cfg.antilag,
     auto: cfg.gearbox !== 'manual',
-    tank: 55,
+    tank: BODY_TANKS[cfg.body] || 55,
+    battery: 75,
+    carb: cfg.body === 'classic' && eng.type !== 'ev',
+    launch: ['coupe', 'supercar', 'muscle'].includes(cfg.body) || cfg.tune >= 2 || eng.type === 'ev',
+    launchRPM: eng.type === 'ev' ? 0 : Math.round(eng.redline * 0.58),
   };
 
-  const brakeTorque = mass * g * 1.35 * R * 1.25;
+  const brakeTorque = mass * g * 1.35 * R * 1.25 * (cfg.brakeKit ? 1.22 : 1);
   const clA = cfg.spoiler === 'gt' ? 0.9 : cfg.spoiler === 'wing' ? 0.55 : cfg.spoiler === 'lip' ? 0.2 : 0.05;
   return {
     body,
@@ -320,13 +369,16 @@ export function buildTuning(cfg) {
     wheels,
     antiRoll: [kF * 0.45 * cfg.antiRoll, kR * 0.3 * cfg.antiRoll],
     maxSteer: body.kind === 'SUV' || body.kind === 'Pickup' || body.kind === 'Van' ? 0.56 : 0.6,
-    brakes: { max: brakeTorque, handbrake: 1900 },
+    brakes: { max: brakeTorque, handbrake: 1900, fadeStart: cfg.brakeKit ? 0.78 : 0.55 },
     aero: { cdA: body.cdA + (cfg.spoiler === 'gt' ? 0.08 : cfg.spoiler === 'wing' ? 0.05 : 0), clA, balance: cfg.spoiler === 'none' ? 0.5 : 0.35 },
     tire,
     powertrain,
     diff: cfg.diff,
+    lsdPreload: cfg.lsdPreload ?? 0.5,
     assists: { abs: cfg.abs, tcs: cfg.tcs, esc: cfg.esc },
     rollCenter: 0.12,
+    alignment: { pressure: cfg.tirePressure ?? 2.2, camber: cfg.camber ?? -1, toe: cfg.toe ?? 0 },
+    rollCage: !!cfg.rollCage,
   };
 }
 

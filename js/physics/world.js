@@ -34,6 +34,32 @@ export class StaticWorld {
     this.baseHeight = -0.0;
     this.bounds = { minX: -2000, maxX: 2000, minZ: -2000, maxZ: 2000 };
     this._stamp = 1;
+    // slippery patches: oil / coolant spills, black ice, standing water
+    this.slicks = [];
+  }
+
+  /** Add a slippery circle. kind: oil | coolant | ice | puddle. */
+  addSlick(x, z, r, kind, life = Infinity) {
+    const grip = kind === 'ice' ? 0.15 : kind === 'oil' ? 0.42 : kind === 'coolant' ? 0.6 : 1;
+    const s = { x, z, r, kind, grip, life };
+    this.slicks.push(s);
+    return s;
+  }
+
+  /** Grip multiplier at (x, z); -1 means standing water (aquaplaning depends on speed). */
+  slickAt(x, z, wet = 0) {
+    let g = 1;
+    for (let i = 0; i < this.slicks.length; i++) {
+      const s = this.slicks[i];
+      const dx = x - s.x, dz = z - s.z;
+      if (dx * dx + dz * dz > s.r * s.r) continue;
+      if (s.kind === 'puddle') {
+        if (wet > 0.45) return -1;
+        continue;
+      }
+      if (s.grip < g) g = s.grip;
+    }
+    return g;
   }
 
   _cell(ix, iz, create) {

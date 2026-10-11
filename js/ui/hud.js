@@ -28,6 +28,10 @@ export class HUD {
     this.streetEl = $('loc-street');
     this.subEl = $('loc-sub');
     this.hurtEl = $('hurt');
+    this.glareEl = $('glare');
+    this.floodEl = $('flood');
+    this.underEl = $('underwater');
+    this.blackEl = $('blackout');
     this.speechLayer = $('speech-layer');
     this.bigTimer = 0;
     this.radioTimer = 0;
@@ -38,7 +42,7 @@ export class HUD {
     this.mapCache = null;
     this.speech = [];
     this.tt = {};
-    for (const [k, label, cls] of [['ind', '◀ ▶', 'g'], ['high', 'HIGH', 'b'], ['lights', 'LIGHTS', 'g'], ['abs', 'ABS', 'y'], ['tcs', 'TCS', 'y'], ['hand', 'P-BRAKE', 'r'], ['engine', 'ENGINE', 'r'], ['temp', 'TEMP', 'r'], ['fuel', 'FUEL', 'y'], ['belt', 'BELT', 'r']]) {
+    for (const [k, label, cls] of [['ind', '◀ ▶', 'g'], ['high', 'HIGH', 'b'], ['lights', 'LIGHTS', 'g'], ['abs', 'ABS', 'y'], ['tcs', 'TCS', 'y'], ['hand', 'P-BRAKE', 'r'], ['engine', 'ENGINE', 'r'], ['temp', 'TEMP', 'r'], ['fuel', 'FUEL', 'y'], ['belt', 'BELT', 'r'], ['cruise', 'CRUISE', 'g'], ['oil', 'OIL', 'r'], ['batt', 'BATT', 'r'], ['tyre', 'TYRE', 'y'], ['fire', 'FIRE', 'r']]) {
       const d = document.createElement('div');
       d.className = 'tt ' + cls;
       d.textContent = label;
@@ -105,6 +109,41 @@ export class HUD {
   hurt(a) {
     this.hurtEl.style.opacity = String(clamp(a, 0, 1));
   }
+  /** Sun glare (0..1), centred on the sun's screen position. */
+  glare(a) {
+    const el = this.glareEl;
+    el.style.opacity = String(clamp(a, 0, 1) * 0.9);
+    if (a > 0.01) {
+      const env = this.game.env;
+      const v = env.sunDir.clone().multiplyScalar(1000).add(this.game.camera.position).project(this.game.camera);
+      el.style.setProperty('--gx', `${((v.x + 1) / 2) * 100}%`);
+      el.style.setProperty('--gy', `${((1 - v.y) / 2) * 100}%`);
+    }
+  }
+  blackout(secs) {
+    this.blackEl.style.opacity = '1';
+    setTimeout(() => (this.blackEl.style.opacity = '0'), secs * 1000);
+  }
+  /** Water in the cabin (cockpit) and the camera under the sea. */
+  updateWater(car) {
+    const g = this.game;
+    const cockpit = g.cam.interior && g.player.mode === 'car';
+    const f = car && cockpit ? car.flood || 0 : 0;
+    this.floodEl.style.height = `${Math.round(f * 85)}%`;
+    const cam = g.camera.position;
+    const wy = g.terrain ? g.terrain.waterAt(cam.x, cam.z) : -Infinity;
+    this.underEl.style.opacity = cam.y < wy ? '1' : '0';
+    // concussion blur from injuries
+    const d = car && car.ext ? car.ext.driver : null;
+    const blur = d && g.player.mode === 'car' ? d.blur : 0;
+    const blurPx = g.settings.reduceShake ? blur * 1.5 : blur * 4;
+    const want = blurPx > 0.2 ? `blur(${blurPx.toFixed(1)}px)` : '';
+    if (want !== this.lastBlur) {
+      g.renderer.domElement.style.filter = want;
+      this.lastBlur = want;
+    }
+  }
+
   /** Floating speech bubble over a world position. */
   say(obj, text, kind = '', time = 2.5) {
     const d = document.createElement('div');
@@ -140,12 +179,14 @@ export class HUD {
       this.subEl.textContent = `San Demo · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${w}`;
     }
     const inCar = !!car && g.player.mode === 'car';
-    const cockpit = g.cam.mode === 'cockpit';
+    const cockpit = g.cam.interior;
     const showGauges = inCar && (!cockpit || g.settings.hudInCockpit);
     $('hud-br').style.display = showGauges ? 'block' : 'none';
     this.ttEl.style.display = showGauges ? 'flex' : 'none';
     if (showGauges) this.drawSpeedo(car);
     if (inCar) this.updateTellTales(car);
+    this.updateWater(car);
+    if (!cockpit || !inCar) this.glare(0);
     if (this.frame % 2 === 0) this.drawMinimap(focus, g.player.heading);
     if (inCar && this.frame % 10 === 0) this.drawDamage(car);
     $('damage-canvas').style.display = inCar ? 'block' : 'none';
@@ -184,15 +225,20 @@ export class HUD {
     const pt = car.phys.pt;
     const set = (k, on) => this.tt[k].classList.toggle('on', !!on);
     set('ind', s.blinkOn);
-    set('high', s.high && s.headlights === 2);
-    set('lights', s.headlights > 0);
+    set('high', s.high && s.lightLevel === 2);
+    set('lights', s.lightLevel > 0);
     set('abs', car.phys.absActive || !car.tuning.assists.abs);
-    set('tcs', car.phys.tcsActive);
+    set('tcs', car.phys.tcsActive || car.phys.escActive || !car.tuning.assists.tcs);
     set('hand', car.phys.input.handbrake > 0 || car.phys.parkBrake);
-    set('engine', pt.health < 0.5 || (car.electrics && !pt.running));
-    set('temp', pt.temp > 112);
-    set('fuel', pt.fuel < 6);
+    set('engine', pt.health < 0.5 || pt.misfire || (car.electrics && !pt.running));
+    set('temp', pt.temp > 112 || pt.coolant < 0.4);
+    set('fuel', car.ext ? car.ext.fuelNeedle < 0.12 : pt.energyFrac < 0.1);
     set('belt', !s.seatbelt && car.speed > 3);
+    set('cruise', car.ext && (car.ext.cruise.on || car.ext.limiter.on));
+    set('oil', pt.oil < 0.25);
+    set('batt', car.ext && (car.ext.volts < 11.8 || (pt.running && car.ext.amps < -5)));
+    set('fire', car.ext && car.ext.fire > 0);
+    set('tyre', car.phys.wheels.some((w) => w.flat > 0.5 || w.wear > 0.85));
   }
 
   // ------------------------------------------------------------ speedometer

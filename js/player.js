@@ -22,11 +22,22 @@ export class PlayerDriver {
     const v = car.speed;
     const fwd = car.forwardSpeed;
     // ignition helpers
-    if (!pt.running && !pt.cranking && d.throttle > 0.3 && s.autoIgnition && !car.wrecked && pt.fuel > 0) car.startEngine();
+    if (!pt.running && !pt.cranking && d.throttle > 0.3 && s.autoIgnition && !car.wrecked && pt.energyFrac > 0 && !pt.hydrolocked) car.startEngine();
+
+    // ---- clutch (realistic mode: you work it; otherwise it's automatic) ----
+    pt.manualClutch = s.clutch === 'manual' && !pt.auto && !pt.ev;
+    const pedal = d.clutch;
+    // keyboard: quick to press, gentle to release so launches are possible
+    pt.clutchPedal = pedal > pt.clutchPedal ? Math.min(pedal, pt.clutchPedal + dt * 8) : Math.max(pedal, pt.clutchPedal - dt * (pedal > 0.01 ? 6 : 1.6));
 
     // ---- steering ----
     let target;
-    if (d.analog) {
+    if (d.wheel) {
+      // real steering wheel: map the rim angle 1:1 (calibrated range)
+      const range = (s.wheelRange || 900) / 2;
+      const lock = 424; // the cockpit wheel turns 7.4 rad (~424 deg) to full lock
+      target = clamp((input.padAxes[0] || 0) * (range / lock), -1, 1);
+    } else if (d.analog) {
       const sens = 1 / (1 + v * 0.02);
       target = d.steer * lerp(1, sens, s.steerAssist ? 0.8 : 0.3);
     } else {
@@ -40,8 +51,10 @@ export class PlayerDriver {
       const counter = clamp(-beta * 1.4 / car.tuning.maxSteer, -0.8, 0.8);
       if (Math.abs(beta) > 0.05) target = clamp(target + counter * (d.steer === 0 ? 1 : 0.5), -1, 1);
     }
-    const rate = d.analog ? 10 : Math.abs(target) > Math.abs(this.steer) && Math.sign(target) === Math.sign(this.steer || target) ? 2.6 : 5.5;
-    this.steer = approach(this.steer, target, rate * dt);
+    let rate = d.analog || d.wheel ? 12 : Math.abs(target) > Math.abs(this.steer) && Math.sign(target) === Math.sign(this.steer || target) ? 2.6 : 5.5;
+    // self-centring: the tyres' aligning torque pulls the wheel straight faster at speed
+    if (!d.analog && !d.wheel && d.steer === 0) rate *= 0.6 + clamp(v / 18, 0, 1) * 0.8 + Math.abs(car.phys.selfAlign) * 2;
+    this.steer = d.wheel ? target : approach(this.steer, target, rate * dt);
     inp.steer = this.steer;
 
     // ---- throttle / brake / gears ----
@@ -71,6 +84,13 @@ export class PlayerDriver {
         brk = t;
       }
     } else {
+      // H-pattern: number keys pick a gear directly
+      for (let g = 1; g <= 7; g++) if (input.pressed('gear' + g) && g <= pt.gearCount) pt.shiftTo(g);
+      if (input.pressed('gearR')) {
+        if (fwd > 2) this.game.toast?.('Too fast for reverse');
+        else pt.shiftTo(-1);
+      }
+      if (input.pressed('gearN')) pt.shiftTo(0);
       if (input.pressed('shiftUp')) pt.shiftUp();
       if (input.pressed('shiftDown')) {
         if (pt.gear === 1 && Math.abs(fwd) > 3) pt.shiftDown();
@@ -86,8 +106,37 @@ export class PlayerDriver {
       else pt.shiftDown();
       this.game.toast?.('Manual shifting (Z / X). Press again with T to return to auto.');
     }
+    // cruise control (PI on speed) and speed limiter
+    const ext = car.ext;
+    if (ext) {
+      const cr = ext.cruise;
+      if (cr.on && pt.running) {
+        const e = cr.speed - fwd;
+        this.cruiseI = clamp((this.cruiseI || 0) + e * dt, -20, 40);
+        const auto = clamp(0.12 * e + 0.025 * this.cruiseI, 0, 1);
+        if (thr < auto) thr = auto;
+      } else this.cruiseI = 0;
+      const lim = ext.limiter;
+      if (lim.on && fwd > lim.speed - 1.5) thr = Math.min(thr, clamp((lim.speed - fwd) * 0.35, 0, 1));
+    }
     inp.throttle = thr;
     inp.brake = brk;
+    // rumble: wheelspin / slides, ABS pulses, curbs and bumps
+    if (input.pad && s.rumble !== false) {
+      this.rumbleT = (this.rumbleT || 0) - dt;
+      if (this.rumbleT <= 0) {
+        this.rumbleT = 0.06;
+        let slip = 0, bump = 0;
+        for (const w of car.phys.wheels) {
+          if (!w.contact) continue;
+          slip = Math.max(slip, clamp((w.slideVel - 2) / 10, 0, 1));
+          bump = Math.max(bump, w.impact * 6);
+        }
+        const abs = car.phys.absActive ? 0.5 : 0;
+        const hit = clamp(car.lastImpact / 12, 0, 1);
+        input.rumble(Math.max(hit, bump * 0.6, abs), Math.max(slip * 0.5, abs * 0.6, (pt.rpm / (pt.spec.redline || 7000)) * 0.08), 80);
+      }
+    }
     inp.handbrake = input.down('handbrake') ? 1 : 0;
     // hold the car when stopped with the engine off
     car.phys.parkBrake = (!pt.running && v < 0.5 && thr < 0.05) || !!car.parkLever;

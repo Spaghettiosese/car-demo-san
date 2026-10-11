@@ -225,6 +225,12 @@ export class Environment {
     this.fogAmount = lerp(this.fogAmount, W.fog, k);
     if (this.rain > 0.2) this.wetness = Math.min(1, this.wetness + dt / 40);
     else this.wetness = Math.max(0, this.wetness - dt / 150);
+    // wind: a slowly veering base wind plus gusts, stronger in bad weather
+    const base = { clear: 1.5, cloudy: 3.5, rain: 5, storm: 9, fog: 0.8, snow: 4 }[this.weather] ?? 2;
+    this.windDir = (this.windDir ?? 0.7) + dt * 0.01 * Math.sin(this.time * 0.013);
+    const gust = Math.max(0, Math.sin(this.time * 0.37) * Math.sin(this.time * 0.11 + 1.3)) * base * 0.8;
+    this.windSpeed = lerp(this.windSpeed ?? base, base + gust, Math.min(1, dt * 0.8));
+    (this.wind ||= new THREE.Vector3()).set(Math.cos(this.windDir) * this.windSpeed, 0, Math.sin(this.windDir) * this.windSpeed);
 
     // sun & moon
     const a = ((this.hour - 6) / 24) * Math.PI * 2;

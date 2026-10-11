@@ -748,6 +748,23 @@ export class Terrain {
     ball.translate(0, 3.6, 0);
     const round = mergeGeos([[trunk, 0x5a4330], [ball, 0x5a7d38]]);
     const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+    // trees sway in the wind (vertex shader: bend increases with height)
+    this.windUniforms = { uWindT: { value: 0 }, uWind: { value: new THREE.Vector2() } };
+    treeMat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, this.windUniforms);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uWindT; uniform vec2 uWind;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+            vec3 ip = instanceMatrix[3].xyz;
+          #else
+            vec3 ip = vec3(0.0);
+          #endif
+          float bend = max(0.0, position.y - 1.0) * 0.012;
+          float ph = uWindT * 1.7 + ip.x * 0.11 + ip.z * 0.07;
+          transformed.x += uWind.x * bend * (0.6 + 0.4 * sin(ph));
+          transformed.z += uWind.y * bend * (0.6 + 0.4 * sin(ph * 1.3 + 1.0));`);
+    };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     const inst = (geo, mat, list, shadow) => {
       const im = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
@@ -877,8 +894,12 @@ export class Terrain {
   }
 
   // ------------------------------------------------------------ per frame
-  update(dt, camPos) {
+  update(dt, camPos, wind) {
     this.time += dt;
+    if (this.windUniforms) {
+      this.windUniforms.uWindT.value = this.time;
+      if (wind) this.windUniforms.uWind.value.set(wind.x, wind.z);
+    }
     if (this.seaMat) {
       this.seaMat.normalMap.offset.set(this.time * 0.004, this.time * 0.0025);
       this.foam.material.opacity = 0.22 + 0.16 * Math.sin(this.time * 0.9);

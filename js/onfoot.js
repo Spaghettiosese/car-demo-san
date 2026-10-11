@@ -21,6 +21,27 @@ export class OnFoot {
     this.onGround = true;
     this.bob = 0;
     this.nearCar = null;
+    this.stun = 0; // after being ejected / hit: tumbling, no control
+    this.roll = 0;
+  }
+
+  /** Thrown out through the windshield. */
+  eject(car, dv) {
+    const g = this.game;
+    const front = new THREE.Vector3(0, car.boundsMax.y - 0.3, car.boundsMax.z + 0.6);
+    car.body.toWorldPoint(front, this.position);
+    this.vel.copy(car.prevVel || car.body.velocity).multiplyScalar(0.65);
+    this.vel.y = 3 + dv * 0.1;
+    this.yaw = Math.atan2(car.body.R[2], car.body.R[8]) + Math.PI;
+    this.pitch = 0;
+    this.stun = 2.6;
+    this.onGround = false;
+    g.player.mode = 'foot';
+    g.cam.mode = 'foot';
+    g.hud.camName('foot');
+    if (car.model.details.driver) car.model.details.driver.visible = false;
+    car.parkLever = false;
+    car.phys.input.throttle = 0;
   }
 
   exitCar(car) {
@@ -107,6 +128,13 @@ export class OnFoot {
         g.hud.say(car.body.position, ['HEY! MY CAR!', 'THIEF!', 'Somebody call the police!'][Math.floor(Math.random() * 3)], 'angry', 3);
         g.police?.offense?.('carjack');
       } else if (car.police) g.police?.offense?.('carjack', true);
+      if (car.parked && car.ext) {
+        // parked cars are locked: smash the window, set off the alarm
+        const win = car.model.parts.winFL;
+        if (win && win.state !== 'shattered') car.shatterGlass(win);
+        car.ext.alarm = 25;
+        g.police?.offense?.('carjack');
+      }
       if (car.parked) car.parked = false;
       if (old) {
         old.isPlayer = false;
@@ -144,6 +172,23 @@ export class OnFoot {
     const world = g.world;
     const m = input.mouse;
     if (!m.locked && m.clicked[0]) input.lock();
+    if (this.stun > 0) {
+      // tumbling: physics only
+      this.stun -= dt;
+      this.roll += dt * (this.onGround ? 1 : 9);
+      this.vel.y -= 9.81 * dt;
+      if (this.onGround) this.vel.multiplyScalar(Math.max(0, 1 - dt * 5));
+      this.position.addScaledVector(this.vel, dt);
+      const gy0 = world.groundAt(this.position.x, this.position.z, this.position.y + 0.45, _g).y;
+      if (this.position.y <= gy0) {
+        if (this.vel.y < -4) g.hud.hurt(0.6);
+        this.position.y = gy0;
+        this.vel.y = Math.abs(this.vel.y) > 3 ? -this.vel.y * 0.25 : 0;
+        this.onGround = true;
+      }
+      if (this.stun <= 0) this.roll = 0;
+      return;
+    }
     // look
     if (m.locked || m.down[2]) {
       this.yaw -= m.dx * 0.0022 * g.settings.sensitivity;
@@ -255,13 +300,44 @@ export class OnFoot {
         if (car.controller && car.controller.say) car.controller.say(['WATCH IT!', 'Get off the road!', 'Oh no oh no oh no'][Math.floor(Math.random() * 3)], 'angry');
       }
     }
+    // key fob: lock / unlock your car from anywhere nearby
+    const mine = g.player.car;
+    if (mine && input.pressed('fob') && mine.body.position.distanceTo(p) < 40) {
+      mine.ext.locked = !mine.ext.locked;
+      mine.sys.blinkFob = mine.ext.locked ? 0.6 : 1.2;
+      g.audio?.fob?.(mine, mine.ext.locked);
+      g.toast(mine.ext.locked ? 'Car locked' : 'Car unlocked');
+    }
     // prompt for nearby cars
     const near = this.findCar();
     this.nearCar = near;
+    let prompt = null;
     if (near) {
       const own = near === g.player.car;
-      g.hud.prompt(`<kbd>F</kbd> ${own ? 'Get in' : near.police ? 'Steal the police car' : near.controller ? 'Carjack this ' + near.model.prof.b.name : 'Get in this ' + near.model.prof.b.name}`);
-    } else g.hud.prompt(null);
+      if (near.ext && near.ext.fire > 0 && !near.ext.burnt) {
+        prompt = '<kbd>E</kbd> (hold) Use the fire extinguisher';
+        if (input.down('interact')) {
+          near.ext.extinguish = 0.2;
+          if (Math.random() < dt * 40) {
+            const nozzle = _v.set(p.x - Math.sin(this.yaw) * 0.6, p.y + 1.1, p.z - Math.cos(this.yaw) * 0.6);
+            g.fx.spray(nozzle, new THREE.Vector3(-Math.sin(this.yaw) * 10, 1, -Math.cos(this.yaw) * 10), 1);
+          }
+          g.audio?.extinguisher?.(true);
+        } else g.audio?.extinguisher?.(false);
+      } else if (own && near.ext && near.ext.battery < 0.25 && !near.phys.pt.running) {
+        const donor = g.cars.find((c) => c !== near && !c.removed && c.body.position.distanceTo(near.body.position) < 9);
+        prompt = donor ? `<kbd>E</kbd> Jump-start from the ${donor.model.prof.b.name}` : 'Battery flat — park another car next to it to jump-start (or call roadside assistance)';
+        if (donor && input.pressed('interact')) {
+          near.ext.battery = 0.65;
+          g.toast('Jump-started! Keep the engine running to recharge', 'good');
+          g.audio?.clunk?.(near, 0.3);
+        }
+      } else if (!own && near.ext && near.ext.locked !== false && near.parked && !near.controller) {
+        prompt = `<kbd>F</kbd> Break in (the alarm will go off)`;
+      }
+      if (!prompt) prompt = `<kbd>F</kbd> ${own ? (near.ext && near.ext.locked ? 'Unlock & get in' : 'Get in') : near.police ? 'Steal the police car' : near.controller ? 'Carjack this ' + near.model.prof.b.name : 'Get in this ' + near.model.prof.b.name}`;
+    }
+    g.hud.prompt(prompt);
   }
 
   updateCamera(dt, input) {
@@ -270,7 +346,9 @@ export class OnFoot {
     this.bob += dt * hs * 2.2;
     const bobY = this.onGround ? Math.sin(this.bob) * 0.04 * Math.min(1, hs / 3) : 0;
     cam.position.set(this.position.x, this.position.y + EYE + bobY, this.position.z);
-    _e.set(this.pitch, this.yaw, Math.sin(this.bob * 0.5) * 0.006 * Math.min(1, hs / 3), 'YXZ');
+    const stunY = this.stun > 0 ? -1.2 : 0;
+    cam.position.y += stunY;
+    _e.set(this.pitch + (this.stun > 0 ? Math.sin(this.roll) * 0.8 : 0), this.yaw + (this.stun > 0 ? this.roll * 0.3 : 0), Math.sin(this.bob * 0.5) * 0.006 * Math.min(1, hs / 3) + (this.stun > 0 ? Math.cos(this.roll * 0.7) * 0.6 : 0), 'YXZ');
     cam.quaternion.setFromEuler(_e);
     cam.fov = damp(cam.fov, 72, 4, dt);
     cam.near = 0.05;

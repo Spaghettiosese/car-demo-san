@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS = {
   showSpeech: true,
   newsVoice: true,
   invertY: false,
+  pedestrians: 1,
 };
 
 function load(key, def) {
@@ -65,6 +66,10 @@ export function save(key, v) {
 }
 
 const _v = new THREE.Vector3();
+const _m4 = new THREE.Matrix4();
+const _q4 = new THREE.Quaternion();
+const _s4 = new THREE.Vector3();
+const _c4 = new THREE.Color();
 const _v2 = new THREE.Vector3();
 
 export class Game {
@@ -180,6 +185,8 @@ export class Game {
     const gps = await tryImport('./ai/gps.js');
     if (gps) this.gpsModule = gps;
     if (this.traffic) this.traffic.init();
+    const peds = await tryImport('./ai/pedestrians.js');
+    if (peds) this.peds = new peds.Pedestrians(this);
   }
 
   /** A fixed pool of real lights (no shader recompiles): player headlights + police strobes. */
@@ -209,8 +216,10 @@ export class Game {
     const car = this.player.car;
     const night = this.env.night;
     const [L, R] = this.headlights;
-    if (car && car.electrics && car.sys.headlights === 2) {
+    if (car && car.electrics && car.sys.lightLevel === 2) {
       const high = car.sys.high || car.sys.flash > 0;
+      const droop = car.ext ? car.ext.lightAim : 0;
+      const dim = car.ext ? clamp((car.ext.volts - 10.2) / 2, 0.15, 1) : 1;
       const units = car.model.lights.head;
       [L, R].forEach((l, i) => {
         const u = units[i];
@@ -219,10 +228,10 @@ export class Game {
           return;
         }
         car.body.toWorldPoint(_v.copy(u.mesh.position).add(u.group.position).sub(car.model.com).setZ(u.mesh.position.z + 0.15 - car.model.com.z), l.position);
-        const aim = _v2.set(u.side * 0.25, high ? 1.0 : 0.05, high ? 70 : 26).sub(car.model.com);
+        const aim = _v2.set(u.side * 0.25 + droop * u.side * 20, (high ? 1.0 : 0.05) - droop * (high ? 70 : 26), high ? 70 : 26).sub(car.model.com);
         aim.x += u.mesh.position.x;
         car.body.toWorldPoint(aim, l.target.position);
-        l.intensity = (high ? 900 : 420) * (0.35 + night * 0.65);
+        l.intensity = (high ? 900 : 420) * (0.35 + night * 0.65) * dim;
         l.distance = high ? 140 : 75;
         l.angle = high ? 0.36 : 0.5;
         l.color.set(car.model.lights.headColor);
@@ -372,9 +381,110 @@ export class Game {
       this.interior?.onImpact?.(dv, p);
       if (dv > 12 && !car.sys.seatbelt) this.cam.addShake(0.8);
     }
+    // parked cars have alarms
+    if (car.parked && car.ext && dv > 1.2 && !(car.ext.alarm > 0)) car.ext.alarm = 18;
     if (other && other.isPlayer && dv > 1.5) car.controller?.onHitByPlayer?.(dv);
     if (car.isPlayer && other && dv > 1.5) other.controller?.onHitByPlayer?.(dv);
     this.police?.onImpact?.(car, other, dv, kind);
+  }
+
+  toggleCruise(car) {
+    const cr = car.ext.cruise;
+    const pt = car.phys.pt;
+    if (cr.on) {
+      cr.on = false;
+      this.toast('Cruise control off');
+    } else if (car.forwardSpeed > 8 && pt.running) {
+      cr.on = true;
+      cr.speed = car.forwardSpeed;
+      this.toast(`Cruise set: <b>${this.fmtSpeed(cr.speed)}</b> (<kbd>=</kbd>/<kbd>-</kbd> to adjust)`);
+    } else if (cr.speed > 8 && car.forwardSpeed > 5 && pt.running) {
+      cr.on = true;
+      this.toast(`Cruise resume: <b>${this.fmtSpeed(cr.speed)}</b>`);
+    } else this.toast('Cruise control works above 30 km/h');
+    this.audio?.click?.();
+  }
+
+  fmtSpeed(ms) {
+    return this.settings.units === 'mph' ? `${Math.round(ms * 2.237)} mph` : `${Math.round(ms * 3.6)} km/h`;
+  }
+
+  /** Toasts and side effects for the player's powertrain / chassis events (before audio consumes them). */
+  carEvents(car) {
+    if (!car) return;
+    for (const e of car.phys.pt.events) {
+      if (e.type === 'grind') this.toast(e.broken ? 'That gear is broken!' : 'Grind! Use the clutch (<kbd>Ctrl</kbd>)', 'warn', 1.5);
+      else if (e.type === 'overrev') this.toast('Over-rev! You money-shifted the engine', 'warn', 2);
+      else if (e.type === 'click') this.toast('Click… click… The battery is flat', 'warn', 3);
+      else if (e.type === 'ready') this.toast('READY', 'good', 1.2);
+      else if (e.type === 'evFault') this.toast('Battery depleted — the car will not start', 'warn', 3);
+      else if (e.type === 'stall' && !e.fuel && !car.phys.pt.auto) this.toast('Stalled', 'warn', 1.2);
+    }
+    for (const e of car.phys.events) {
+      if (e.type === 'blowout') {
+        this.toast('Blowout!', 'warn', 2);
+        this.audio?.impact?.(car.body.position, 6, 'tyre', car);
+        this.cam.addShake(0.4);
+      }
+    }
+    car.phys.events.length = 0;
+    // NPC chassis events are not interesting
+    for (const c of this.cars) if (c !== car) c.phys.events.length = 0;
+  }
+
+  onCarEvent(car, what) {
+    const mine = car === this.player.car;
+    if (what === 'fire') {
+      if (mine) this.toast('🔥 Your car is on fire! Get out (<kbd>F</kbd>)', 'warn', 5);
+      this.fireDept?.call?.(car);
+    }
+    if (what === 'fireOut' && mine) this.toast('Fire is out', 'good');
+    if (what === 'burnt' && mine) this.toast('The car burned out', 'warn', 4);
+  }
+
+  onExplosion(car, p) {
+    this.fx.sparks(p, new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 80);
+    for (let i = 0; i < 6; i++) this.fx.fire(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 3)), 2);
+    this.fx.impactDust(p, 3);
+    this.audio?.explosion?.(p);
+    const d = this.camera.position.distanceTo(p);
+    this.cam.addShake(Math.max(0, 1.5 - d / 40));
+    // shove everything nearby
+    for (const c of this.cars) {
+      if (c === car || c.removed) continue;
+      const off = c.body.position.clone().sub(p);
+      const r = off.length();
+      if (r > 14) continue;
+      off.y += 2;
+      off.normalize().multiplyScalar(c.body.mass * (14 - r) * 0.6);
+      c.body.applyImpulse(off, c.body.position);
+      c.body.sleeping = false;
+    }
+    for (const pd of this.peds?.list || []) {
+      if (pd.pos.distanceTo(p) < 12 && pd.state !== 'down') this.peds.knockDown(pd, car, pd.pos.clone().sub(p).setY(0).normalize().multiplyScalar(8), 6);
+    }
+    if (this.player.mode === 'foot' && this.onFoot && this.onFoot.position.distanceTo(p) < 10) this.hud.hurt(0.8);
+    if (car === this.player.car && this.player.mode === 'car') car.ext.hurt(0.7, this, 'explosion');
+  }
+
+  /** Unbelted driver goes through the windshield. */
+  onEjected(car, dv) {
+    if (car !== this.player.car || !this.onFoot) return;
+    this.toast('You went through the windshield. Wear your seatbelt.', 'warn', 5);
+    this.onFoot.eject?.(car, dv);
+    car.ext.hurt(0.45, this, 'ejected');
+  }
+
+  onBlackout(car, cause) {
+    this.toast('You blacked out…', 'warn', 4);
+    this.hud.blackout?.(3);
+    this.career?.onBlackout?.(cause);
+    setTimeout(() => {
+      if (car.ext) {
+        car.ext.driver.health = 0.5;
+        car.ext.driver.out = false;
+      }
+    }, 3000);
   }
 
   onPartEvent(car, part, what) {
@@ -460,26 +570,33 @@ export class Game {
     sim *= this.timeScale;
 
     const pc = this.player.car;
-    if (this.player.mode === 'car' && pc) {
+    const photo = this.cam.mode === 'free';
+    if (photo && this.settings.photoPause !== false) sim = 0;
+    if (this.player.mode === 'car' && pc && !photo) {
       this.driver.update(pc, dt, input);
-      this.carKeys(pc);
-    } else if (this.player.mode === 'foot' && pc) {
+      this.carKeys(pc, dt);
+    } else if (pc && (photo || this.player.mode === 'foot')) {
       // abandoned car: nobody at the wheel
       pc.phys.input.throttle = 0;
       pc.phys.input.steer *= 0.9;
     }
-    this.traffic?.update(sim);
-    this.police?.update(sim);
-    this.physics.step(sim, this.cars);
-    for (const c of this.cars) c.processImpacts(sim);
-    for (const c of this.cars) {
-      if (c.physicsActive) c.update(sim, this.physics.time);
-      else c.syncVisual(sim, this.physics.time);
-    }
-    if (this.player.mode === 'foot') this.onFoot?.update(sim, input);
-    this.debris.update(sim);
+    if (sim > 0) {
+      const wind = this.env.wind;
+      if (wind) for (const c of this.cars) if (c.physicsActive) c.phys.wind.copy(wind);
+      this.traffic?.update(sim);
+      this.peds?.update(sim);
+      this.police?.update(sim);
+      this.physics.step(sim, this.cars);
+      for (const c of this.cars) c.processImpacts(sim);
+      for (const c of this.cars) {
+        if (c.physicsActive) c.update(sim, this.physics.time);
+        else c.syncVisual(sim, this.physics.time);
+      }
+      if (this.player.mode === 'foot') this.onFoot?.update(sim, input);
+      this.debris.update(sim);
+    } else this.peds?.render?.();
     this.city.update(sim);
-    this.terrain.update(sim, this.camera.position);
+    this.terrain.update(sim, this.camera.position, this.env.wind);
     this.coast.update(sim, this.env.night);
     this.props.update(sim, this.camera.position);
     this.carEffects(sim);
@@ -518,6 +635,7 @@ export class Game {
     else this.cam.update(dt, input);
     this.env.sky.position.copy(this.camera.position);
     if (this.player.mode === 'car') this.interior?.update(dt, input);
+    this.carEvents(pc);
     this.audio?.update(dt);
     this.gpsUpdate(dt);
     this.zones(dt);
@@ -562,14 +680,57 @@ export class Game {
     if (input.pressed('enterExit')) this.toggleOnFoot();
   }
 
-  carKeys(car) {
+  carKeys(car, dt = 1 / 60) {
     const input = this.input;
     if (this.cam.mode === 'free') return;
     const s = car.sys;
+    const pt = car.phys.pt;
+    const ext = car.ext;
+    if (input.pressed('flash')) {
+      s.flash = 0.35;
+      this.traffic?.onPlayerFlash?.(car);
+    }
+    if (input.down('flash')) s.flash = Math.max(s.flash, 0.1);
+    if (input.pressed('fog')) {
+      const f = car.cycleFog();
+      this.toast(['Fog lights off', 'Front fog lights', 'Front + rear fog lights'][f]);
+      this.audio?.click?.();
+    }
+    if (input.pressed('driveMode')) {
+      const order = ['eco', 'normal', 'sport'];
+      pt.mode = order[(order.indexOf(pt.mode) + 1) % 3];
+      this.toast(`Drive mode: <b>${pt.mode.toUpperCase()}</b>`);
+      this.audio?.click?.();
+    }
+    if (input.pressed('regen') && pt.ev) {
+      pt.regenLevel = (pt.regenLevel + 1) % 4;
+      this.toast(`Regenerative braking: <b>${['off', 'low', 'medium', 'high (one-pedal)'][pt.regenLevel]}</b>`);
+    }
+    if (input.pressed('cruise') && ext) this.toggleCruise(car);
+    if (ext && (input.pressed('cruiseUp') || input.pressed('cruiseDown'))) {
+      const step = (this.settings.units === 'mph' ? 5 / 2.237 : 5 / 3.6) * (input.pressed('cruiseUp') ? 1 : -1);
+      const tgt = ext.cruise.on ? ext.cruise : ext.limiter.on ? ext.limiter : null;
+      if (tgt) {
+        tgt.speed = Math.max(5, tgt.speed + step);
+        this.toast(`${tgt === ext.cruise ? 'Cruise' : 'Limiter'}: <b>${this.fmtSpeed(tgt.speed)}</b>`);
+      }
+    }
+    if (input.pressed('limiter') && ext) {
+      const l = ext.limiter;
+      l.on = !l.on;
+      if (l.on) l.speed = Math.max(car.forwardSpeed, 50 / 3.6);
+      this.toast(l.on ? `Speed limiter: <b>${this.fmtSpeed(l.speed)}</b> (<kbd>=</kbd>/<kbd>-</kbd>)` : 'Speed limiter off');
+      this.audio?.click?.();
+    }
+    // seat adjustment
+    if (input.down('seatUp')) s.seatH = Math.min(0.08, s.seatH + dt * 0.08);
+    if (input.down('seatDown')) s.seatH = Math.max(-0.08, s.seatH - dt * 0.08);
+    if (input.down('seatFwd')) s.seatZ = Math.min(0.12, s.seatZ + dt * 0.1);
+    if (input.down('seatBack')) s.seatZ = Math.max(-0.12, s.seatZ - dt * 0.1);
     if (input.pressed('camera')) {
       const m = this.cam.next();
       this.hud.camName(m);
-      if (m !== 'cockpit') this.input.unlock();
+      if (!this.cam.interior) this.input.unlock();
     }
     if (input.pressed('ignition')) {
       if (car.phys.pt.running || car.phys.pt.cranking) car.stopEngine();
@@ -577,7 +738,7 @@ export class Game {
     }
     if (input.pressed('lights')) {
       const m = car.cycleHeadlights();
-      this.toast(['Lights off', 'Parking lights', 'Headlights on'][m]);
+      this.toast(['Lights off', 'Parking lights', 'Headlights on', 'Headlights: AUTO'][m]);
       this.audio?.click?.();
     }
     if (input.pressed('highBeam')) {
@@ -598,9 +759,9 @@ export class Game {
     }
     if (input.pressed('wipers')) {
       const w = car.cycleWipers();
-      this.toast(['Wipers off', 'Wipers: intermittent', 'Wipers: low', 'Wipers: high'][w]);
+      this.toast(['Wipers off', 'Wipers: intermittent', 'Wipers: low', 'Wipers: high', 'Wipers: AUTO (rain sensor)'][w]);
     }
-    s.horn = input.down('horn');
+    s.horn = input.down('horn') || !!(ext && ext.hornStuck);
     if (input.pressed('siren') && car.police) car.sirenOn = !car.sirenOn;
     if (input.keyPressed('KeyT')) {
       const pt = car.phys.pt;
@@ -616,7 +777,7 @@ export class Game {
     }
     // hold R to reset / flip
     if (input.down('reset')) {
-      this.resetHold = (this.resetHold || 0) + 1 / 60;
+      this.resetHold = (this.resetHold || 0) + dt;
       if (this.resetHold > 0.5) {
         this.resetHold = -10;
         this.recoverCar(car);
@@ -652,6 +813,29 @@ export class Game {
   }
 
   // ------------------------------------------------------------ per-car visual effects
+  /** Oil / coolant / fuel stains on the road (visual side of world.slicks). */
+  onLeak(car, p, kind) {
+    if (!this.stains) {
+      const geo = new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+      this.stains = new THREE.InstancedMesh(geo, mat, 96);
+      this.stains.count = 0;
+      this.stains.frustumCulled = false;
+      this.stains.setColorAt(0, new THREE.Color());
+      this.scene.add(this.stains);
+      this.stainN = 0;
+    }
+    const i = this.stainN++ % 96;
+    const r = car.speed < 2 ? 0.9 + Math.random() * 0.6 : 0.35 + Math.random() * 0.3;
+    const y = this.world.groundAt(p.x, p.z, p.y, { y: 0 }).y + 0.015;
+    _m4.compose(_v.set(p.x + (Math.random() - 0.5) * 0.6, y, p.z + (Math.random() - 0.5) * 0.6), _q4.setFromAxisAngle(_v2.set(0, 1, 0), Math.random() * 6), _s4.set(r, 1, r * (0.7 + Math.random() * 0.6)));
+    this.stains.setMatrixAt(i, _m4);
+    this.stains.setColorAt(i, _c4.set(kind === 'coolant' ? 0x1f7a3a : 0x0a0908));
+    this.stains.count = Math.min(96, this.stainN);
+    this.stains.instanceMatrix.needsUpdate = true;
+    this.stains.instanceColor.needsUpdate = true;
+  }
+
   carEffects(dt) {
     const cam = this.camera.position;
     const wet = this.env.wetness;
@@ -661,6 +845,14 @@ export class Game {
       if (d2 > 160 * 160) continue;
       const near = d2 < 70 * 70;
       const v = car.body.velocity;
+      // a dragging exhaust throws sparks and scrapes
+      if (car.ext && car.ext.exhaustDrag && car.speed > 3 && car.phys.grounded >= 3 && near) {
+        const tail = _v.set(car.boundsMin.x * 0.4, car.boundsMin.y + 0.05, car.boundsMin.z + 0.4);
+        car.body.toWorldPoint(tail, tail);
+        tail.y = this.world.groundAt(tail.x, tail.z, tail.y + 0.3, { y: 0 }).y + 0.03;
+        if (Math.random() < dt * 30) this.fx.sparks(tail, _v2.set(0, 1, 0), v, 3);
+        car.scrape = Math.max(car.scrape, 2.5);
+      }
       car.phys.wheels.forEach((w, i) => {
         const key = car.id * 4 + i;
         if (!w.contact || w.detached) {
@@ -738,6 +930,7 @@ export class Game {
     this.menuT = (this.menuT || 0) + dt;
     const car = this.player.car;
     this.traffic?.update(dt);
+    this.peds?.update(dt);
     this.physics.step(dt, this.cars);
     for (const c of this.cars) c.processImpacts(dt);
     for (const c of this.cars) {
@@ -814,23 +1007,49 @@ export class Game {
         return;
       }
     }
-    // fuel pumps
-    if (city.pumps && car.speed < 1) {
-      for (const pump of city.pumps) {
-        if (Math.hypot(p.x - pump.x, p.z - pump.z) < 3.8) {
-          const pt = car.phys.pt;
-          const ev = pt.ev;
-          prompt = pt.fuel >= 54.9 ? (ev ? 'Battery full' : 'Tank full') : `Hold <kbd>Enter</kbd> to ${ev ? 'charge' : 'refuel'} (${pt.fuel.toFixed(1)} / 55 L)`;
-          if (input.key('Enter') && pt.fuel < 55) {
-            if (pt.running && !ev) {
-              prompt = 'Turn the engine off first (<kbd>I</kbd>)';
-            } else {
-              pt.fuel = Math.min(55, pt.fuel + dt * 9);
+    // fuel pumps (combustion) and fast chargers (EV)
+    if (car.speed < 1) {
+      const pt = car.phys.pt;
+      const spots = pt.ev ? city.chargers || [] : city.pumps || [];
+      const wrong = pt.ev ? city.pumps || [] : city.chargers || [];
+      for (const w of wrong) if (Math.hypot(p.x - w.x, p.z - w.z) < 3.8) prompt = pt.ev ? 'This is a fuel pump — EV chargers are on the west side' : 'That is an EV charger';
+      for (const pump of spots) {
+        if (Math.hypot(p.x - pump.x, p.z - pump.z) >= 3.8) continue;
+        const frac = pt.energyFrac;
+        const unitTxt = pt.ev ? `${Math.round(frac * 100)}%` : `${pt.fuel.toFixed(1)} / ${pt.tank} L`;
+        const price = pt.ev ? 0.45 : 1.7;
+        if (frac >= 0.995) prompt = pt.ev ? 'Battery full' : 'Tank full';
+        else if (!pt.ev && !car.sys.fuelDoor) {
+          prompt = '<kbd>Enter</kbd> Open the fuel door';
+          if (input.keyPressed('Enter')) {
+            car.sys.fuelDoor = true;
+            this.audio?.click?.();
+          }
+        } else {
+          prompt = `Hold <kbd>Enter</kbd> to ${pt.ev ? 'charge' : 'refuel'} (${unitTxt})${this.career ? ` · ${pt.ev ? '$0.45/kWh' : '$1.70/L'}` : ''}`;
+          if (input.key('Enter')) {
+            if (pt.running && !pt.ev) prompt = 'Turn the engine off first (<kbd>I</kbd>)';
+            else {
+              const rate = pt.ev ? dt * 2.2 : dt * 9; // kWh/s (sped up) or L/s
+              const before = pt.ev ? pt.soc : pt.fuel;
+              if (pt.ev) pt.soc = Math.min(pt.battery, pt.soc + rate);
+              else pt.fuel = Math.min(pt.tank, pt.fuel + rate);
+              const added = (pt.ev ? pt.soc : pt.fuel) - before;
+              if (this.career && added > 0 && !this.career.charge(added * price, pt.ev ? 'Charging' : 'Fuel', true)) {
+                if (pt.ev) pt.soc = before;
+                else pt.fuel = before;
+                prompt = 'Not enough money';
+              }
+              this.fuelingT = 0.4;
             }
           }
-          break;
         }
+        break;
       }
+    }
+    if (this.fuelingT > 0) {
+      this.fuelingT -= dt;
+      if (this.fuelingT <= 0) this.career?.flushReceipt?.();
     }
     // drag strip timing
     const ds = city.dragStrip;

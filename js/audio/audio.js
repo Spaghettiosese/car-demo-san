@@ -804,7 +804,7 @@ export class AudioEngine {
     }
     const car = game.player.car;
     const inCar = game.player.mode === 'car' && car;
-    const interior = inCar && game.cam.mode === 'cockpit';
+    const interior = inCar && game.cam.interior;
     const windowOpen = car ? Math.max(car.sys.window, car.model.parts.winFL?.state === 'shattered' ? 1 : 0, car.model.parts.windshield?.state === 'shattered' ? 1 : 0) : 1;
     const closed = interior ? 1 - windowOpen * 0.8 : 0;
     this.worldFilter.frequency.setTargetAtTime(lerp(20000, 1400, closed), t, 0.1);
@@ -856,7 +856,10 @@ export class AudioEngine {
       // horn
       const hornOn = inCar && car.sys.horn;
       this.updateHorn(this.horn, hornOn, dt);
-      if (hornOn && !this.hornWasOn) game.traffic?.onPlayerHorn?.();
+      if (hornOn && !this.hornWasOn) {
+        game.traffic?.onPlayerHorn?.();
+        if (game.player.car) game.peds?.onHorn?.(game.player.car);
+      }
       this.hornWasOn = hornOn;
       // indicator relay
       const blink = car.sys.blinkOn;

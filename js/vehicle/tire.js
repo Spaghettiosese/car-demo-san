@@ -7,10 +7,10 @@
 // "let go" progressively.
 
 export const TIRES = {
-  street: { name: 'Street', mu: 1.0, kPeak: 0.11, aPeak: 0.15, falloff: 0.82, wet: 0.78, loadSens: 0.07, width: 0.215, squeal: 1.0 },
-  sport: { name: 'Sport', mu: 1.1, kPeak: 0.095, aPeak: 0.13, falloff: 0.78, wet: 0.72, loadSens: 0.08, width: 0.245, squeal: 1.1 },
-  slick: { name: 'Semi-slick', mu: 1.24, kPeak: 0.085, aPeak: 0.115, falloff: 0.72, wet: 0.5, loadSens: 0.09, width: 0.275, squeal: 1.25 },
-  offroad: { name: 'All-terrain', mu: 0.93, kPeak: 0.13, aPeak: 0.18, falloff: 0.9, wet: 0.88, loadSens: 0.05, width: 0.255, squeal: 0.7, offroad: true },
+  street: { name: 'Street', mu: 1.0, kPeak: 0.11, aPeak: 0.15, falloff: 0.82, wet: 0.78, loadSens: 0.07, width: 0.215, squeal: 1.0, optTemp: 55, wearRate: 1 },
+  sport: { name: 'Sport', mu: 1.1, kPeak: 0.095, aPeak: 0.13, falloff: 0.78, wet: 0.72, loadSens: 0.08, width: 0.245, squeal: 1.1, optTemp: 75, wearRate: 1.3 },
+  slick: { name: 'Semi-slick', mu: 1.24, kPeak: 0.085, aPeak: 0.115, falloff: 0.72, wet: 0.5, loadSens: 0.09, width: 0.275, squeal: 1.25, optTemp: 92, wearRate: 2.2 },
+  offroad: { name: 'All-terrain', mu: 0.93, kPeak: 0.13, aPeak: 0.18, falloff: 0.9, wet: 0.88, loadSens: 0.05, width: 0.255, squeal: 0.7, offroad: true, optTemp: 50, wearRate: 0.8 },
 };
 
 /** Normalised grip curve f(s): f(0)=0, peak f(1)=1, tends to `falloff` when sliding. */
