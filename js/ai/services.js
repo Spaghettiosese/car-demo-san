@@ -10,7 +10,7 @@ const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _f = new THREE.Vector3();
 
-const UNIT_CFG = {
+export const UNIT_CFG = {
   ambulance: () => ({ ...configForBody('van', DEFAULT_CONFIG), paint: '#f4f4f0', livery: 'side', accent: '#d11f2a', plate: 'SDGH ' + Math.floor(10 + Math.random() * 89), horn: 'high', finish: 'gloss' }),
   fire: () => ({ ...configForBody('van', DEFAULT_CONFIG), paint: '#c8102e', livery: 'side', accent: '#f2f2f2', plate: 'SDFD ' + Math.floor(10 + Math.random() * 89), horn: 'truck', finish: 'gloss', wheelColor: '#e8e8e8' }),
   tow: () => ({ ...configForBody('pickup', DEFAULT_CONFIG), paint: '#f2b90c', livery: 'side', accent: '#111111', plate: 'TOW ' + Math.floor(100 + Math.random() * 899), horn: 'truck', finish: 'gloss', engine: 'v8' }),
@@ -56,6 +56,21 @@ export class Services {
     car.service = kind;
     car.sirenOn = kind !== 'tow';
     car.beaconsOn = true; // the tow truck flashes amber without a siren
+    if (kind === 'tow') {
+      // a simple boom and hook over the bed
+      const steel = (Services.boomMat ||= new THREE.MeshStandardMaterial({ color: 0x2b2d31, metalness: 0.6, roughness: 0.45 }));
+      const boom = new THREE.Group();
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.9), steel);
+      arm.rotation.x = -0.45;
+      arm.position.set(0, 0.42, -0.35);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.16), steel);
+      post.position.set(0, 0.1, 0.45);
+      const hook = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.12), steel);
+      hook.position.set(0, -0.32, -1.2);
+      boom.add(arm, post, hook);
+      boom.position.set(0, car.boundsMax.y - 0.55, car.boundsMin.z + 1.1);
+      car.root.add(boom);
+    }
     car.sys.headlights = 2;
     const drv = new Driver(car, g.traffic || { game: g });
     drv.speedFactor = kind === 'tow' ? 1.05 : 1.35;

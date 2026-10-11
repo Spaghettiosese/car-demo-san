@@ -148,6 +148,8 @@ function buildLoft(prof, simple) {
         if (d && !simple) return 'win' + d[0] + side;
         return 'glassQ';
       }
+      // the sail between the side glass and the rear window: dark glass, not a painted spike
+      if (zm < Z.roofR && zm >= Z.deck && !bed) return 'glassQ';
       return 'body';
     }
     if (seg >= 2 && !simple) {
@@ -904,11 +906,19 @@ function buildLights(cfg, prof, design, parts, npc) {
   for (const s of [1, -1]) {
     // headlight
     const hd = b.head;
-    const w = hd.x1 - hd.x0;
+    // the lamp shape is part of a body's face: round on the classic, a slim LED strip on the supercar
+    const face = b.face || {};
+    let hx0 = hd.x0, hx1 = hd.x1, hh = hd.h, rad = 0.035;
+    if (face.lamps === 'round') {
+      const dia = Math.min(hd.x1 - hd.x0, hd.h * 1.5);
+      const mid = (hd.x0 + hd.x1) / 2;
+      [hx0, hx1, hh, rad] = [mid - dia / 2, mid + dia / 2, dia, dia / 2 - 0.002];
+    } else if (face.lamps === 'slim') [hh, rad] = [hd.h * 0.42, 0.015];
+    const w = hx1 - hx0;
     const mat = new THREE.MeshStandardMaterial({ color: 0xd8dde3, map: headTex, emissive: new THREE.Color(headColor), emissiveMap: headTex, emissiveIntensity: 0, roughness: 0.1, metalness: 0.4 });
-    const m = new THREE.Mesh(lampGeometry(w, hd.h, 0.08, 0.035), mat);
-    const x0 = s * hd.x0, x1 = s * hd.x1;
-    const c = placeOnSkin(prof, m, s > 0 ? x0 : x1, s > 0 ? x1 : x0, hd.y, hd.h, 1);
+    const m = new THREE.Mesh(lampGeometry(w, hh, 0.08, rad), mat);
+    const x0 = s * hx0, x1 = s * hx1;
+    const c = placeOnSkin(prof, m, s > 0 ? x0 : x1, s > 0 ? x1 : x0, hd.y, hh, 1);
     bodyGroup.add(m);
     const u = new LightUnit(m, mat, bodyGroup, c);
     u.side = s;
