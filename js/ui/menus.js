@@ -578,7 +578,7 @@ export class Menus {
       this.row('ABS / TCS', this.seg('abs', [[1, 'ABS on'], [0, 'ABS off']], car.tuning.assists.abs ? 1 : 0) + this.seg('tcs', [[1, 'TCS on'], [0, 'TCS off']], car.tuning.assists.tcs ? 1 : 0)),
       this.row('Steering assist', this.seg('sa', [[1, 'On'], [0, 'Off']], g.settings.steerAssist ? 1 : 0)),
       this.row('Damage', `Body ${Math.round(car.damageSummary().body * 100)}% · wheels off: ${car.phys.wheels.filter((w) => w.detached).length}`),
-    ].join('');
+    ].join('') + `<h3 class="dmg-h">Damage report</h3>${g.hud.damageReport ? g.hud.damageReport(car) : ''}`;
     this.bindSeg(c, 'gb', (v) => {
       pt.auto = v === 'auto';
       pt.selector = pt.auto ? 'D' : 'M';
@@ -613,28 +613,72 @@ export class Menus {
     root().appendChild(p);
   }
 
-  settingsRows(c) {
+  settingsRows(c, tab = this.settingsTab || 'graphics') {
     const g = this.game;
     const s = g.settings;
-    c.innerHTML = `<div class="grid2"><div>${[
+    this.settingsTab = tab;
+    const TABS = [['graphics', 'Graphics'], ['camera', 'Camera'], ['hud', 'HUD'], ['audio', 'Audio'], ['driving', 'Driving'], ['world', 'World']];
+    const onoff = (k, key) => this.seg(k, [[1, 'On'], [0, 'Off']], s[key] ? 1 : 0);
+    const slider = (name, min, max, step, val, fmt) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-r="${name}"><span data-o="${name}">${fmt(val)}</span>`;
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    let rows = [];
+    if (tab === 'graphics') rows = [
       this.row('Graphics preset', this.seg('q', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], s.quality)),
-      this.row('Resolution scale', `<input type="range" min="0.5" max="1" step="0.05" value="${s.resScale}" data-r="res"><span data-o="res">${Math.round(s.resScale * 100)}%</span>`),
-      this.row('Shadows', this.seg('shadows', [[1, 'On'], [0, 'Off']], s.shadows ? 1 : 0)),
-      this.row('Bloom & grading', this.seg('bloom', [[1, 'On'], [0, 'Off']], s.bloom ? 1 : 0)),
-      this.row('Cockpit FOV', `<input type="range" min="55" max="95" step="1" value="${s.cockpitFov}" data-r="fov"><span data-o="fov">${s.cockpitFov}°</span>`),
+      this.row('Resolution scale', slider('res', 0.5, 1, 0.05, s.resScale, pct)),
+      this.row('Dynamic resolution (holds the frame rate)', onoff('dynres', 'dynamicRes')),
+      this.row('View distance', slider('view', 0.5, 1.5, 0.05, s.viewDistance, pct)),
+      this.row('Tree density', slider('trees', 0, 1, 0.05, s.treeDensity, pct)),
+      this.row('Shadows', onoff('shadows', 'shadows')),
+      this.row('Bloom & grading', onoff('bloom', 'bloom')),
+      this.row('Live mirrors', this.seg('mirrors', [['off', 'Off'], ['rear', 'Rear only'], ['all', 'Rear + side']], s.mirrors)),
+    ];
+    else if (tab === 'camera') rows = [
+      this.row('Cockpit FOV', slider('fov', 55, 95, 1, s.cockpitFov, (v) => `${v}°`)),
+      this.row('Chase camera distance', slider('cdist', 0.6, 1.8, 0.05, s.chaseDist, pct)),
+      this.row('Chase camera height', slider('cheight', 0.5, 2, 0.05, s.chaseHeight, pct)),
+      this.row('Chase camera stiffness', slider('cstiff', 0.3, 2.5, 0.05, s.chaseStiffness, pct)),
+      this.row('Mouse sensitivity', slider('sens', 0.2, 3, 0.05, s.sensitivity, pct)),
+      this.row('Invert mouse Y', onoff('invy', 'invertY')),
+      this.row('Reduce camera shake', onoff('shake', 'reduceShake')),
+      this.row('Rear-view picture-in-picture (chase cam)', onoff('pip', 'rearPip')),
+      this.row('Automatic crash replays', onoff('autorep', 'autoReplay')),
+    ];
+    else if (tab === 'hud') rows = [
       this.row('Units', this.seg('units', [['kmh', 'km/h'], ['mph', 'mph']], s.units)),
-      this.row('Speedometer in cockpit', this.seg('hudc', [[1, 'Show'], [0, 'Hide']], s.hudInCockpit ? 1 : 0)),
-      this.row('Speech bubbles', this.seg('speech', [[1, 'On'], [0, 'Off']], s.showSpeech ? 1 : 0)),
-    ].join('')}</div><div>${[
-      this.row('Master volume', `<input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-r="master">`),
-      this.row('Engine volume', `<input type="range" min="0" max="1.5" step="0.05" value="${s.engineVolume}" data-r="engine">`),
-      this.row('Effects volume', `<input type="range" min="0" max="1.5" step="0.05" value="${s.sfxVolume}" data-r="sfx">`),
-      this.row('Radio volume', `<input type="range" min="0" max="1" step="0.05" value="${s.radioVolume}" data-r="radio">`),
-      this.row('Radio news voice', this.seg('voice', [[1, 'On'], [0, 'Off']], s.newsVoice ? 1 : 0)),
-      this.row('Steering assist', this.seg('assist', [[1, 'On'], [0, 'Off']], s.steerAssist ? 1 : 0)),
-      this.row('Auto-start engine on throttle', this.seg('autoign', [[1, 'On'], [0, 'Off']], s.autoIgnition ? 1 : 0)),
+      this.row('Speedometer style', this.seg('speedo', [['analog', 'Analog'], ['digital', 'Digital'], ['minimal', 'Minimal']], s.speedo)),
+      this.row('HUD scale', slider('hudscale', 0.7, 1.4, 0.05, s.hudScale, pct)),
+      this.row('Colour-blind friendly palette', onoff('cb', 'colorBlind')),
+      this.row('Speed-limit sign', onoff('limit', 'speedLimitSign')),
+      this.row('Speedometer in cockpit', onoff('hudc', 'hudInCockpit')),
+      this.row('Speech bubbles', onoff('speech', 'showSpeech')),
+      this.row('Subtitles (radio, speech, GPS)', onoff('subs', 'subtitles')),
+      this.row('Frame-time graph', onoff('perf', 'perfGraph')),
+    ];
+    else if (tab === 'audio') rows = [
+      this.row('Master volume', slider('master', 0, 1, 0.05, s.masterVolume, pct)),
+      this.row('Engine volume', slider('engine', 0, 1.5, 0.05, s.engineVolume, pct)),
+      this.row('Effects volume', slider('sfx', 0, 1.5, 0.05, s.sfxVolume, pct)),
+      this.row('Radio volume', slider('radio', 0, 1, 0.05, s.radioVolume, pct)),
+      this.row('Radio news voice', onoff('voice', 'newsVoice')),
+      this.row('Spoken NPC lines (browser voice)', onoff('npcv', 'npcVoices')),
+      this.row('Spoken GPS directions', onoff('gpsv', 'gpsVoice')),
+    ];
+    else if (tab === 'driving') rows = [
+      this.row('Assist preset', this.seg('preset', [['arcade', 'Arcade'], ['realistic', 'Realistic'], ['sim', 'Sim']], s.assistPreset)),
+      this.row('Steering assist', onoff('assist', 'steerAssist')),
+      this.row('Auto-start engine on throttle', onoff('autoign', 'autoIgnition')),
+      this.row('Look back', this.seg('holdlb', [[1, 'Hold'], [0, 'Toggle']], s.holdLookBack ? 1 : 0)),
+      this.row('Sprint on foot', this.seg('holdrun', [[1, 'Hold'], [0, 'Toggle']], s.holdRun ? 1 : 0)),
+      this.row('Steering wheel rotation', slider('lock', 270, 1080, 30, s.wheelLock, (v) => `${v}°`) + `<button class="btn small" data-a="calib">Calibrate wheel</button>`),
+    ];
+    else if (tab === 'world') rows = [
+      this.row('Weather changes over time', onoff('autow', 'autoWeather')),
+      this.row('Traffic follows the clock (rush hours)', onoff('tbt', 'trafficByTime')),
+      this.row('Emergency services & breakdowns', onoff('svc', 'services')),
       this.row('Reset all settings', `<button class="btn small" data-a="reset">Defaults</button>`),
-    ].join('')}</div></div>`;
+    ];
+    c.innerHTML = `<div class="stabs">${TABS.map(([k, n]) => `<button data-st="${k}" class="${k === tab ? 'on' : ''}">${n}</button>`).join('')}</div><div class="srows">${rows.join('')}</div>`;
+    c.querySelectorAll('[data-st]').forEach((b) => (b.onclick = () => this.settingsRows(c, b.dataset.st)));
     const range = (name, key, fmt, apply) => {
       const r = c.querySelector(`[data-r=${name}]`);
       if (!r) return;
@@ -646,59 +690,116 @@ export class Menus {
         this.saveSettings();
       };
     };
-    range('res', 'resScale', (v) => `${Math.round(v * 100)}%`, () => g.resize());
+    range('res', 'resScale', pct, () => g.resize());
+    range('view', 'viewDistance', pct, () => g.applyViewDistance?.());
+    range('trees', 'treeDensity', pct, () => g.terrain?.setTreeDensity?.(s.treeDensity));
     range('fov', 'cockpitFov', (v) => `${v}°`, () => (g.cam.cockpitFov = s.cockpitFov));
-    range('master', 'masterVolume');
-    range('engine', 'engineVolume');
-    range('sfx', 'sfxVolume');
-    range('radio', 'radioVolume');
+    range('cdist', 'chaseDist', pct);
+    range('cheight', 'chaseHeight', pct);
+    range('cstiff', 'chaseStiffness', pct);
+    range('sens', 'sensitivity', pct);
+    range('hudscale', 'hudScale', pct, () => g.applyHudPrefs?.());
+    range('master', 'masterVolume', pct);
+    range('engine', 'engineVolume', pct);
+    range('sfx', 'sfxVolume', pct);
+    range('radio', 'radioVolume', pct);
+    range('lock', 'wheelLock', (v) => `${v}°`);
+    const flag = (k, key, after) => this.bindSeg(c, k, (v) => {
+      s[key] = v === '1';
+      after?.();
+      this.saveSettings();
+    });
     this.bindSeg(c, 'q', (v) => {
       s.quality = v;
-      if (v === 'low') Object.assign(s, { shadows: false, bloom: false, resScale: 0.7, traffic: 14 });
-      if (v === 'medium') Object.assign(s, { shadows: true, bloom: true, resScale: 0.85, traffic: 20 });
-      if (v === 'high') Object.assign(s, { shadows: true, bloom: true, resScale: 1, traffic: 26 });
+      if (v === 'low') Object.assign(s, { shadows: false, bloom: false, resScale: 0.7, traffic: 14, viewDistance: 0.7, treeDensity: 0.5, mirrors: 'rear' });
+      if (v === 'medium') Object.assign(s, { shadows: true, bloom: true, resScale: 0.85, traffic: 20, viewDistance: 0.9, treeDensity: 0.8, mirrors: 'rear' });
+      if (v === 'high') Object.assign(s, { shadows: true, bloom: true, resScale: 1, traffic: 26, viewDistance: 1, treeDensity: 1, mirrors: 'all' });
       this.applyGraphics();
       this.saveSettings();
-      this.settingsRows(c);
+      this.settingsRows(c, 'graphics');
     });
-    this.bindSeg(c, 'shadows', (v) => {
-      s.shadows = v === '1';
-      this.applyGraphics();
+    flag('shadows', 'shadows', () => this.applyGraphics());
+    flag('bloom', 'bloom');
+    flag('dynres', 'dynamicRes', () => g.resize());
+    this.bindSeg(c, 'mirrors', (v) => {
+      s.mirrors = v;
       this.saveSettings();
     });
-    this.bindSeg(c, 'bloom', (v) => {
-      s.bloom = v === '1';
-      this.saveSettings();
-    });
+    flag('invy', 'invertY');
+    flag('shake', 'reduceShake');
+    flag('pip', 'rearPip');
+    flag('autorep', 'autoReplay');
     this.bindSeg(c, 'units', (v) => {
       s.units = v;
       this.saveSettings();
     });
-    this.bindSeg(c, 'hudc', (v) => {
-      s.hudInCockpit = v === '1';
+    this.bindSeg(c, 'speedo', (v) => {
+      s.speedo = v;
       this.saveSettings();
     });
-    this.bindSeg(c, 'speech', (v) => {
-      s.showSpeech = v === '1';
+    flag('cb', 'colorBlind', () => g.applyHudPrefs?.());
+    flag('limit', 'speedLimitSign');
+    flag('hudc', 'hudInCockpit');
+    flag('speech', 'showSpeech');
+    flag('subs', 'subtitles');
+    flag('perf', 'perfGraph');
+    flag('voice', 'newsVoice');
+    flag('npcv', 'npcVoices');
+    flag('gpsv', 'gpsVoice');
+    this.bindSeg(c, 'preset', (v) => {
+      s.assistPreset = v;
+      g.applyAssistPreset?.(g.player.car, true);
       this.saveSettings();
+      this.settingsRows(c, 'driving');
     });
-    this.bindSeg(c, 'voice', (v) => {
-      s.newsVoice = v === '1';
-      this.saveSettings();
-    });
-    this.bindSeg(c, 'assist', (v) => {
-      s.steerAssist = v === '1';
-      this.saveSettings();
-    });
-    this.bindSeg(c, 'autoign', (v) => {
-      s.autoIgnition = v === '1';
-      this.saveSettings();
-    });
-    c.querySelector('[data-a=reset]').onclick = () => {
+    flag('assist', 'steerAssist');
+    flag('autoign', 'autoIgnition');
+    flag('holdlb', 'holdLookBack');
+    flag('holdrun', 'holdRun');
+    flag('autow', 'autoWeather');
+    flag('tbt', 'trafficByTime');
+    flag('svc', 'services', () => !s.services && g.services?.clear());
+    const calib = c.querySelector('[data-a=calib]');
+    if (calib) calib.onclick = () => this.calibrateWheel(c);
+    const reset = c.querySelector('[data-a=reset]');
+    if (reset) reset.onclick = () => {
       Object.assign(s, DEFAULT_SETTINGS);
       this.applyGraphics();
+      g.applyHudPrefs?.();
       this.saveSettings();
-      this.settingsRows(c);
+      this.settingsRows(c, tab);
+    };
+  }
+
+  /** Steering wheel calibration: turn fully left, fully right, then centre. */
+  calibrateWheel(c) {
+    const g = this.game;
+    const steps = ['Turn the wheel fully LEFT and hold it', 'Now fully RIGHT', 'Now let it go to the centre'];
+    const read = () => {
+      const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+      return pads.length ? pads[0].axes[0] : null;
+    };
+    if (read() === null) {
+      g.toast('No wheel or gamepad found. Plug it in and press any button on it first.', 'warn', 4);
+      return;
+    }
+    const cal = {};
+    let k = 0;
+    const panel = this.el(`<div class="calib"><div class="t"></div><button class="btn small primary">Next</button></div>`);
+    c.appendChild(panel);
+    const show = () => (panel.querySelector('.t').textContent = `Step ${k + 1}/3: ${steps[k]}`);
+    show();
+    panel.querySelector('button').onclick = () => {
+      const v = read() ?? 0;
+      if (k === 0) cal.min = v;
+      else if (k === 1) cal.max = v;
+      else cal.center = v;
+      k++;
+      if (k < 3) return show();
+      g.settings.wheelCal = cal;
+      this.saveSettings();
+      panel.remove();
+      g.toast(`Wheel calibrated (${cal.min.toFixed(2)} … ${cal.max.toFixed(2)})`, 'good');
     };
   }
 

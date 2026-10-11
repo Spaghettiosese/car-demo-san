@@ -48,6 +48,32 @@ export const DEFAULT_SETTINGS = {
   newsVoice: true,
   invertY: false,
   pedestrians: 1,
+  // v2 options
+  dynamicRes: false,
+  viewDistance: 1,
+  treeDensity: 1,
+  chaseDist: 1,
+  chaseHeight: 1,
+  chaseStiffness: 1,
+  reduceShake: false,
+  rearPip: false,
+  hudScale: 1,
+  colorBlind: false,
+  subtitles: false,
+  speedo: 'analog',
+  speedLimitSign: true,
+  perfGraph: false,
+  npcVoices: false,
+  gpsVoice: true,
+  assistPreset: 'realistic',
+  holdLookBack: true,
+  holdRun: true,
+  autoWeather: true,
+  trafficByTime: true,
+  services: true,
+  mirrors: 'all',
+  autoReplay: true,
+  wheelLock: 900,
 };
 
 function load(key, def) {
@@ -147,6 +173,9 @@ export class Game {
     await tick();
     window.addEventListener('resize', () => this.resize());
     this.resize();
+    this.applyViewDistance();
+    this.applyHudPrefs();
+    this.terrain?.setTreeDensity?.(this.settings.treeDensity);
     // warm up shader compilation
     this.renderer.compile(this.scene, this.camera);
     this.last = performance.now();
@@ -301,9 +330,57 @@ export class Game {
     this.beams.material.opacity = 0.55 * night;
   }
 
+  /** View distance: LOD ranges, tree culling, camera far plane and fog. */
+  applyViewDistance() {
+    const k = this.settings.viewDistance || 1;
+    if (this.terrain) this.terrain.viewK = k;
+    this.camera.far = 3500 * k;
+    this.camera.updateProjectionMatrix();
+    this.env.fogScale = 1 / k;
+  }
+
+  /** HUD scale and the colour-blind palette. */
+  applyHudPrefs() {
+    const s = this.settings;
+    document.documentElement.style.setProperty('--hud-scale', s.hudScale || 1);
+    document.body.classList.toggle('cb', !!s.colorBlind);
+  }
+
+  /** Assist presets: Arcade (everything on, forgiving), Realistic, Sim (all off). */
+  applyAssistPreset(car, announce = false) {
+    if (!car) return;
+    const p = this.settings.assistPreset || 'realistic';
+    const a = car.tuning.assists;
+    if (p === 'arcade') Object.assign(a, { abs: true, tcs: true, esc: true });
+    else if (p === 'realistic') Object.assign(a, { abs: car.cfg.abs !== false, tcs: car.cfg.tcs !== false, esc: true });
+    else Object.assign(a, { abs: false, tcs: false, esc: false });
+    this.settings.steerAssist = p !== 'sim';
+    car.phys.arcade = p === 'arcade' ? 1.12 : 1; // a little extra grip in Arcade
+    if (announce) this.toast(`Assists: ${p[0].toUpperCase() + p.slice(1)}`, 'info', 2);
+  }
+
+  /** Dynamic resolution: trade pixels for a steady frame rate (~16-22 ms target). */
+  updateDynRes(ms) {
+    if (!this.settings.dynamicRes) {
+      if (this.dynScale !== 1) {
+        this.dynScale = 1;
+        this.resize();
+      }
+      return;
+    }
+    this.dynAvg = lerp(this.dynAvg || ms, ms, 0.05);
+    this.dynT = (this.dynT || 0) + ms / 1000;
+    if (this.dynT < 1) return;
+    this.dynT = 0;
+    const before = this.dynScale || 1;
+    if (this.dynAvg > 22) this.dynScale = Math.max(0.55, before - 0.07);
+    else if (this.dynAvg < 15.5) this.dynScale = Math.min(1, before + 0.05);
+    if (this.dynScale !== before) this.resize();
+  }
+
   resize() {
     const w = innerWidth, h = innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * this.settings.resScale);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * this.settings.resScale * (this.dynScale || 1));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -340,6 +417,7 @@ export class Game {
     this.player.car = car;
     this.player.mode = 'car';
     this.cam.car = car;
+    this.applyAssistPreset(car);
     if (this.interiorModule) this.interior = new this.interiorModule.Interior(this, car);
     this.audio?.setPlayerCar?.(car);
     car.sys.headlights = this.env.night > 0.3 ? 2 : 0;
@@ -558,6 +636,9 @@ export class Game {
     if (!(dt > 0)) dt = 1 / 60;
     dt = Math.min(dt, 1 / 20);
     this.fps = lerp(this.fps, 1 / dt, 0.05);
+    this.frameMs = (now - (this.prevNow || now)) || dt * 1000;
+    this.prevNow = now;
+    this.updateDynRes(this.frameMs);
     try {
       this.update(dt);
       this.render(dt);
@@ -666,7 +747,7 @@ export class Game {
     const cp = this.camera.position;
     for (const c of this.cars) c.setLod(c === pc && this.cam.mode !== 'free' ? 0 : c.body.position.distanceTo(cp));
     // camera
-    this.cam.lookBack = input.down('lookBack');
+    this.cam.lookBack = input.held('lookBack', this.settings.holdLookBack !== false);
     if (this.player.mode === 'foot' && this.onFoot) this.onFoot.updateCamera(dt, input);
     else this.cam.update(dt, input);
     this.env.sky.position.copy(this.camera.position);
@@ -1151,6 +1232,13 @@ export class Game {
     if (this.post && this.settings.bloom) this.post.render(dt, this, scene, cam);
     else this.renderer.render(scene, cam);
     if (!garage && this.player.mode === 'car') this.interior?.renderMirrors?.(this.renderer);
+    this.hud.pipShown = false;
+    if (!garage) this.hud.renderPip?.(this.renderer);
+    const pf = document.getElementById('pip-frame');
+    if (pf && !this.hud.pipShown) {
+      pf.style.display = 'none';
+      document.body.classList.remove('pip');
+    }
   }
 
   // ------------------------------------------------------------ interaction zones & proving grounds
@@ -1309,6 +1397,24 @@ function tick() {
 const loading = document.getElementById('loading');
 const bar = loading.querySelector('.fill');
 const msg = loading.querySelector('.msg');
+// a tip on the loading screen, changing every few seconds
+const LOAD_TIPS = [
+  'Click the key in the cockpit (or press I) to start the engine. EVs need the brake held.',
+  'Flash your hazards (J) after a mistake: other drivers accept the apology.',
+  'Wanted? A respray at San Demo Customs makes the police lose your description.',
+  'Hide in the car wash or the customs workshop to cool off a pursuit.',
+  'Seatbelt (cockpit buckle) or you may fly through the windshield.',
+  'Stunt jumps, speed traps and 25 hubcaps are hidden all over the map.',
+  'Tab opens your phone: map, jobs, contacts, bank and the camera.',
+  'F5 shows a replay of the last 30 seconds. F2 is photo mode.',
+  'Cold tyres have less grip. Warm them up before you push.',
+  'Stop signs mean stop: rolling through one is a ticket.',
+];
+const tipEl = document.getElementById('load-tip');
+let tipI = Math.floor(Math.random() * LOAD_TIPS.length);
+const showTip = () => tipEl && (tipEl.textContent = '💡 ' + LOAD_TIPS[tipI++ % LOAD_TIPS.length]);
+showTip();
+const tipTimer = setInterval(showTip, 3500);
 const game = new Game();
 window.game = game;
 window.__THREE = THREE;
@@ -1319,6 +1425,7 @@ game
   })
   .then(() => {
     bar.style.width = '100%';
+    clearInterval(tipTimer);
     loading.classList.add('done');
     game.menus?.openMain();
     if (!game.menus) game.startDriving();

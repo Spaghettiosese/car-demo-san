@@ -313,7 +313,7 @@ export class VehiclePhysics {
       const worn = 1 - 0.3 * Math.pow(w.wear, 1.6);
       let slick = w.slick;
       if (slick < 0) slick = 1 - clamp((vAbs - 18) / 10, 0, 0.72); // standing water: aquaplaning
-      w.mu = tire.mu * grip * wetMul * ls * this.gripScale * (1 - 0.45 * w.flat) * thermal * worn * this.pressureGrip * slick * (1 - Math.min(0.25, Math.abs(w.camber) * 0.6));
+      w.mu = tire.mu * grip * wetMul * ls * this.gripScale * (this.arcade || 1) * (1 - 0.45 * w.flat) * thermal * worn * this.pressureGrip * slick * (1 - Math.min(0.25, Math.abs(w.camber) * 0.6));
       w.vden = Math.max(Math.abs(w.vx), VMIN);
       const sx = (w.omega * R - w.vx) / w.vden / tire.kPeak;
       const sy = w.vy / w.vden / this.tanAPeak;

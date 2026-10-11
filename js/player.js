@@ -34,9 +34,13 @@ export class PlayerDriver {
     let target;
     if (d.wheel) {
       // real steering wheel: map the rim angle 1:1 (calibrated range)
-      const range = (s.wheelRange || 900) / 2;
+      const range = (s.wheelLock || s.wheelRange || 900) / 2;
       const lock = 424; // the cockpit wheel turns 7.4 rad (~424 deg) to full lock
-      target = clamp((input.padAxes[0] || 0) * (range / lock), -1, 1);
+      // calibration maps the measured left/centre/right axis values to -1/0/1
+      let ax = input.padAxes[0] || 0;
+      const cal = s.wheelCal;
+      if (cal && cal.max !== cal.min) ax = ax < cal.center ? (ax - cal.center) / Math.max(1e-3, cal.center - cal.min) : (ax - cal.center) / Math.max(1e-3, cal.max - cal.center);
+      target = clamp(ax * (range / lock), -1, 1);
     } else if (d.analog) {
       const sens = 1 / (1 + v * 0.02);
       target = d.steer * lerp(1, sens, s.steerAssist ? 0.8 : 0.3);

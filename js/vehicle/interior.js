@@ -41,6 +41,25 @@ export class Interior {
   dispose() {
     this.group.parent?.remove(this.group);
     this.mirrorRT?.dispose();
+    for (const m of this.sideMirrors || []) {
+      m.rt.dispose();
+      m.glass.material = m.orig;
+    }
+  }
+
+  /** The door mirrors get live views (their own cameras and render targets). */
+  buildSideMirrors() {
+    this.sideMirrors = [];
+    for (const d of this.car.model.details.mirrors || []) {
+      const rt = new THREE.WebGLRenderTarget(256, 144, { type: THREE.HalfFloatType });
+      rt.texture.repeat.x = -1; // a mirror image
+      rt.texture.offset.x = 1;
+      const cam = new THREE.PerspectiveCamera(34, 256 / 144, 0.3, 160);
+      const mat = new THREE.MeshBasicMaterial({ map: rt.texture });
+      const orig = d.glass.material;
+      d.glass.material = mat;
+      this.sideMirrors.push({ d, rt, cam, mat, orig, glass: d.glass, idx: d.side > 0 ? 0 : 1 });
+    }
   }
 
   get prof() {
@@ -405,6 +424,21 @@ export class Interior {
       });
     }
     this.foldBtn = this.button(g, sx + 0.25, sy - 0.47, sz + 0.62, 0.03, 0.018, 0x2a2a2a, null, () => `Mirrors: <b>${this.car.sys.mirrorsFolded ? 'folded' : 'out'}</b>`, () => (this.car.sys.mirrorsFolded = !this.car.sys.mirrorsFolded));
+    // mirror adjust pad: centre picks the mirror, the edges tilt it
+    this.mirrorSel = 0;
+    this.mirrorAdj = this.car.sys.mirrorAdj ||= [{ yaw: 0, pitch: 0 }, { yaw: 0, pitch: 0 }];
+    const pad = this.button(g, sx + 0.25, sy - 0.47, sz + 0.58, 0.036, 0.036, 0x30343a, null, () => (this.mirrorSel ? `Adjusting the <b>${this.mirrorSel === 1 ? 'left' : 'right'}</b> mirror — click the pad's edges to tilt it, the centre to switch` : 'Mirror adjust — click the centre to pick a mirror'), (hit) => {
+      const lp = hit ? pad.worldToLocal(hit.point.clone()) : new THREE.Vector3();
+      if (Math.abs(lp.x) < 0.007 && Math.abs(lp.y) < 0.007) {
+        this.mirrorSel = (this.mirrorSel + 1) % 3;
+        return;
+      }
+      if (!this.mirrorSel) this.mirrorSel = 1;
+      const a = this.mirrorAdj[this.mirrorSel - 1];
+      if (Math.abs(lp.x) > Math.abs(lp.y)) a.yaw = clamp(a.yaw + (lp.x < 0 ? 0.03 : -0.03), -0.35, 0.35);
+      else a.pitch = clamp(a.pitch + (lp.y > 0 ? 0.02 : -0.02), -0.25, 0.25);
+    });
+    this.mirrorPad = pad;
     // radio volume knob on the screen bezel
     const vol = new THREE.Mesh(knobGeo, alu);
     vol.position.set(0.15, sy - 0.36, stackZ - 0.025);
@@ -563,6 +597,7 @@ export class Interior {
     mirrorBack.rotation.copy(mirror.rotation);
     g.add(mirrorBack, mirror);
     this.mirrorPos = mirrorPos;
+    this.buildSideMirrors();
     this.mirrorMat = mirrorMat;
     // side mirror glass shows the same feed
     for (const m of car.model.details.mirrors) {
@@ -1328,8 +1363,15 @@ export class Interior {
   // ---------------------------------------------------------------- mirrors
   renderMirrors(renderer) {
     if (!this.game.cam.interior || this.game.state !== 'play') return;
+    const mode = this.game.settings.mirrors || 'all';
+    if (mode === 'off') return;
     this.mirrorFrame++;
-    if (this.mirrorFrame % 2) return;
+    // rear mirror every other frame; with side mirrors on, rear / left / right in turn
+    const side = mode === 'all' && this.sideMirrors?.length;
+    const slot = side ? this.mirrorFrame % 4 : this.mirrorFrame % 2;
+    if (side && (slot === 1 || slot === 3)) return this.renderSideMirror(renderer, this.sideMirrors[slot === 1 ? 0 : 1]);
+    if (slot !== 0 && !(side && slot === 2)) return;
+    if (side && slot === 2) return;
     const car = this.car;
     const cam = this.mirrorCam;
     const p = _v.copy(this.mirrorPos).sub(car.model.com);
@@ -1354,6 +1396,34 @@ export class Interior {
     sky.position.copy(this.game.camera.position);
   }
 }
+
+Interior.prototype.renderSideMirror = function (renderer, m) {
+  if (!m) return;
+  const car = this.car;
+  const d = m.d;
+  if (!d.attached || car.sys.mirrorsFolded || !m.glass.parent) return;
+  const cam = m.cam;
+  m.glass.getWorldPosition(cam.position);
+  cam.quaternion.copy(car.body.quaternion);
+  const adj = this.mirrorAdj[m.idx];
+  // look back and a little outward (+x is the car's left)
+  cam.rotateY((d.side > 0 ? -0.32 : 0.32) - (d.side > 0 ? adj.yaw : -adj.yaw));
+  cam.rotateX(-0.06 + adj.pitch);
+  cam.updateMatrixWorld();
+  const sky = this.game.env.sky;
+  sky.position.copy(cam.position);
+  const vis = this.group.visible;
+  this.group.visible = false;
+  const auto = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false;
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(m.rt);
+  renderer.render(this.game.scene, cam);
+  renderer.setRenderTarget(prev);
+  renderer.shadowMap.autoUpdate = auto;
+  this.group.visible = vis;
+  sky.position.copy(this.game.camera.position);
+};
 
 function drawCrack(ctx, c) {
   let s = c.seed;

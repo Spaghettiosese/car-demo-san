@@ -178,6 +178,14 @@ export class Input {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
+  /** Hold or toggle, per the settings (look back, sprint). */
+  held(action, hold = true) {
+    if (hold) return this.down(action);
+    this.toggles ||= {};
+    if (this.pressed(action)) this.toggles[action] = !this.toggles[action];
+    return !!this.toggles[action];
+  }
+
   down(action) {
     if (!this.enabled) return false;
     const b = BINDINGS[action];

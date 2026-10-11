@@ -490,6 +490,21 @@ export function installExtras(AudioEngine) {
         if (Math.floor((ex.chimeT + dt) * 2.5) !== Math.floor(ex.chimeT * 2.5)) this.tone(1170, 0.25, { gain: 0.05 });
       }
     }
+    // tinnitus after a hard knock: a high whine and muffled surroundings, fading out
+    const drv = car && car.ext ? car.ext.driver : null;
+    const ring = drv && inCar ? drv.ring || 0 : 0;
+    if (!this.tinn && ring > 0.05) {
+      const o = ctx.createOscillator();
+      o.frequency.value = 4100;
+      const tg = ctx.createGain();
+      tg.gain.value = 0;
+      o.connect(tg);
+      tg.connect(this.master);
+      o.start();
+      this.tinn = tg;
+    }
+    if (this.tinn) this.tinn.gain.setTargetAtTime(ring * 0.035, t, 0.2);
+    if (ring > 0.2) this.worldFilter.frequency.setTargetAtTime(600 + (1 - ring) * 6000, t, 0.2);
     this.evHum.gain.setTargetAtTime(evHum, t, 0.1);
     this.pumpL.g.gain.setTargetAtTime(pump, t, 0.05);
     this.fanL.g.gain.setTargetAtTime(fan, t, 0.4);

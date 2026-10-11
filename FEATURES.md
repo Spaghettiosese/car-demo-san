@@ -44,8 +44,8 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F039 Head bump from road impacts
 - [x] F040 RPM-tuned cockpit vibration
 - [x] F041 Lean out of the open window to look back
-- [ ] F042 Side mirrors with their own view angles
-- [ ] F043 Mirror adjustment
+- [x] F042 Side mirrors with their own view angles
+- [x] F043 Mirror adjustment
 - [x] F044 Fold-mirrors button
 - [x] F045 Hood release lever
 - [x] F046 Trunk release
@@ -57,7 +57,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F052 Phone mount on the dashboard showing the phone screen
 - [x] F053 Steering self-centring and weight from tyre aligning torque
 - [x] F054 Gamepad rumble (slip, ABS, curbs, impacts)
-- [ ] F055 Steering wheel device support with rotation calibration
+- [x] F055 Steering wheel device support with rotation calibration
 - [x] F056 Hazard "thank you" double blink calms the car behind
 - [x] F057 Electronic parking brake button on modern cars
 - [x] F058 Key fob: remote lock and unlock with a blink and a chirp
@@ -89,7 +89,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F082 Exhaust drags after an underbody hit, throwing sparks
 - [x] F083 Metal fatigue from repeated hard landings
 - [x] F084 Driver health and injury from crashes
-- [ ] F085 Unbelted injuries: blur, tinnitus, ejection through a broken windshield
+- [x] F085 Unbelted injuries: blur, tinnitus, ejection through a broken windshield
 - [x] F086 Aquaplaning in standing water
 - [x] F087 Wind gusts push tall vehicles
 - [x] F088 Water physics: buoyancy, drag, sinking
@@ -251,7 +251,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F236 Pedestrians dodge cars and react to the horn
 - [x] F237 Pedestrians can be knocked over (and the police care)
 - [x] F238 Pedestrian variety: joggers, dog walkers
-- [ ] F239 Parking-lot cars with alarms
+- [x] F239 Parking-lot cars with alarms
 - [ ] F240 Fireworks over the harbor at night
 
 ## G. Traffic and police AI (241–275)
@@ -264,7 +264,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F247 Delivery vans that double-park
 - [x] F248 NPC-vs-NPC crashes and arguments
 - [x] F249 NPCs honk at each other
-- [ ] F250 Voiced NPC lines
+- [x] F250 Voiced NPC lines
 - [x] F251 Road-rage brake checking
 - [x] F252 Road-rage cut-offs
 - [x] F253 Ragers get out to confront you
@@ -309,7 +309,7 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F290 Static between radio stations while tuning
 - [x] F291 Radio volume knob
 - [x] F292 Police scanner chatter
-- [ ] F293 Spoken GPS turn-by-turn prompts
+- [x] F293 Spoken GPS turn-by-turn prompts
 - [x] F294 Rain on the roof, heard in the cockpit
 - [x] F295 Thunder arrives after the lightning, delayed by its distance
 
@@ -328,9 +328,9 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F307 Wheel cam
 - [x] F308 Helicopter cam during pursuits
 - [x] F309 Cockpit FOV adjustment
-- [ ] F310 Camera shake scaled by impact strength
-- [ ] F311 Chase camera distance, height and stiffness settings
-- [ ] F312 Rear-view picture-in-picture in the chase cam
+- [x] F310 Camera shake scaled by impact strength
+- [x] F311 Chase camera distance, height and stiffness settings
+- [x] F312 Rear-view picture-in-picture in the chase cam
 - [x] F313 Cinematic camera with automatic cuts
 - [x] F314 Cameras collide with terrain (no clipping into hills)
 - [ ] F315 Photo mode time-of-day slider
@@ -340,30 +340,30 @@ This is the checklist of features added in the v2 remake, on top of everything v
 - [x] F317 Phone (Tab): map, jobs, contacts, bank, messages, settings
 - [ ] F318 Text messages from contacts with job offers
 - [x] F319 Key rebinding
-- [ ] F320 Assist presets: Arcade, Realistic, Sim
-- [ ] F321 Mouse sensitivity and invert Y that actually work
+- [x] F320 Assist presets: Arcade, Realistic, Sim
+- [x] F321 Mouse sensitivity and invert Y that actually work
 - [x] F322 Distance units on the HUD and phone
-- [ ] F323 Colour-blind-friendly HUD palette
-- [ ] F324 HUD scale
-- [ ] F325 Subtitles for radio and speech
+- [x] F323 Colour-blind-friendly HUD palette
+- [x] F324 HUD scale
+- [x] F325 Subtitles for radio and speech
 - [x] F326 Big map with zoom and pan
 - [x] F327 Map legend and filters
 - [x] F328 GPS route to any point of interest
-- [ ] F329 Turn-by-turn arrow on the HUD
-- [ ] F330 Speed-limit sign on the HUD
-- [ ] F331 Speedometer styles
-- [ ] F332 Telemetry throttle and brake trace graph
-- [ ] F333 Detailed damage report panel
+- [x] F329 Turn-by-turn arrow on the HUD
+- [x] F330 Speed-limit sign on the HUD
+- [x] F331 Speedometer styles
+- [x] F332 Telemetry throttle and brake trace graph
+- [x] F333 Detailed damage report panel
 - [x] F334 Notification feed
 - [ ] F335 Step-by-step tutorial
-- [ ] F336 Loading-screen tips
+- [x] F336 Loading-screen tips
 - [x] F337 Pause menu: resume, restart or quit the event
-- [ ] F338 Frame-time graph overlay
-- [ ] F339 Dynamic resolution scaling
-- [ ] F340 View distance setting
-- [ ] F341 Tree density setting
-- [ ] F342 Reduce camera shake (accessibility)
-- [ ] F343 Toggle-or-hold control options (accessibility)
+- [x] F338 Frame-time graph overlay
+- [x] F339 Dynamic resolution scaling
+- [x] F340 View distance setting
+- [x] F341 Tree density setting
+- [x] F342 Reduce camera shake (accessibility)
+- [x] F343 Toggle-or-hold control options (accessibility)
 - [x] F344 About and credits screen
 - [ ] F345 Sandbox: spawn AI with a chosen behaviour (racer, derby, flee, rage)
 - [ ] F346 Sandbox: save and load scenarios

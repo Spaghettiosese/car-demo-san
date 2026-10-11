@@ -213,7 +213,7 @@ export class OnFoot {
       mx /= len;
       mz /= len;
     }
-    const speed = input.key('ShiftLeft') ? 6.5 : 3.2;
+    const speed = input.held('run', this.game.settings.holdRun !== false) ? 6.5 : 3.2;
     // camera forward is -z rotated by yaw
     const sx = -Math.sin(this.yaw), sz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);

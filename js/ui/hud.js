@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp, KMH, MPH } from '../core/util.js';
+import { installHudExtras } from './hudExtras.js';
 import { CITY, roadCoord, CITY_HALF, PG } from '../world/city.js';
 import { CAMERA_NAMES } from '../camera.js';
 
@@ -39,6 +40,7 @@ export class HUD {
     this.lastStreet = '';
     this.frame = 0;
     this.telemetry = false;
+    this.setupExtras?.();
     this.mapCache = null;
     this.speech = [];
     this.tt = {};
@@ -233,6 +235,8 @@ export class HUD {
 
   /** Floating speech bubble over a world position. */
   say(obj, text, kind = '', time = 2.5) {
+    const pos = obj && (obj.x !== undefined ? obj : obj.position);
+    if (pos && pos.distanceTo && pos.distanceTo(this.game.camera.position) < 45) this.subtitle(kind === 'cop' ? '👮' : kind === 'ped' ? '🚶' : '🚗', text, time + 0.5);
     const d = document.createElement('div');
     d.className = 'speech ' + kind;
     d.textContent = text;
@@ -278,7 +282,11 @@ export class HUD {
     if (this.frame % 2 === 0) this.drawMinimap(focus, g.player.heading);
     if (inCar && this.frame % 10 === 0) this.drawDamage(car);
     $('damage-canvas').style.display = inCar ? 'block' : 'none';
-    if (this.telemetry && inCar && this.frame % 3 === 0) this.drawTelemetry(car);
+    if (this.telemetry && inCar && this.frame % 3 === 0) {
+      this.drawTelemetry(car);
+      this.drawTrace(car);
+    }
+    this.updateExtras(dt);
   }
 
   updateSpeech(dt) {
@@ -729,7 +737,13 @@ export class HUD {
     const ctx = this.dmg;
     ctx.clearRect(0, 0, 84, 150);
     const d = car.damageSummary();
+    const cb = this.game.settings.colorBlind;
     const col = (v) => {
+      if (cb) {
+        // blue -> orange (safe for red-green colour blindness)
+        const k = clamp(v * 1.5, 0, 1);
+        return `rgb(${Math.round(86 + 144 * k)},${Math.round(180 - 21 * k)},${Math.round(233 - 233 * k)})`;
+      }
       const r = Math.round(80 + 175 * clamp(v * 1.6, 0, 1));
       const gr = Math.round(210 - 170 * clamp(v * 1.3, 0, 1));
       return `rgb(${r},${gr},70)`;
@@ -787,3 +801,5 @@ export class HUD {
     el.innerHTML = `<pre style="margin:0">${html}</pre>`;
   }
 }
+
+installHudExtras(HUD);

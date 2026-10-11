@@ -299,7 +299,7 @@ export class Environment {
     // fog
     const fogCol = horizon.clone().multiplyScalar(0.9);
     this.scene.fog.color.copy(fogCol);
-    this.scene.fog.density = 0.0011 + this.fogAmount * 0.009 + this.rain * 0.0015;
+    this.scene.fog.density = (0.0011 + this.fogAmount * 0.009 + this.rain * 0.0015) * (this.fogScale || 1);
 
     // rain
     this.rainMesh.visible = this.rain > 0.03;

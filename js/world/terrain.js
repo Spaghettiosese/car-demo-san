@@ -782,9 +782,12 @@ export class Terrain {
       const f = fbm(x * 0.006, z * 0.006, 3);
       if (f < 0.52 - smoothstep(0, 80, _s.y) * 0.1 && rnd() > 0.08) continue;
       const sc = 0.75 + rnd() * 0.7;
-      (_s.y > 40 || rnd() < 0.55 ? pines : rounds).push([x, _s.y, z, sc, rnd() * 6.28]);
-      if (e < 40) this.world.addCylinder(x, z, 0.32 * sc, _s.y - 1, _s.y + 6, { kind: 'tree', mat: MATERIALS.wood });
-      else if (rnd() < 0.5) this.world.addCylinder(x, z, 0.32 * sc, _s.y - 1, _s.y + 6, { kind: 'tree', mat: MATERIALS.wood });
+      const t = [x, _s.y, z, sc, rnd() * 6.28, 0];
+      (_s.y > 40 || rnd() < 0.55 ? pines : rounds).push(t);
+      if (e < 40 || rnd() < 0.5) {
+        this.world.addCylinder(x, z, 0.32 * sc, _s.y - 1, _s.y + 6, { kind: 'tree', mat: MATERIALS.wood });
+        t[5] = 1; // solid: always drawn, whatever the tree-density setting
+      }
     }
     // trunk + crown merged into one vertex-coloured geometry per species
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 2.4, 6);
@@ -814,7 +817,10 @@ export class Terrain {
     };
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     const inst = (geo, mat, list, shadow) => {
+      list.sort((a, b) => b[5] - a[5]); // solid trees first, so density cuts only decorative ones
       const im = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+      im.userData.full = list.length;
+      im.userData.solid = list.filter((t) => t[5]).length;
       list.forEach((t, i) => {
         q.setFromAxisAngle(up, t[4] || 0);
         sv.setScalar(t[3]);
@@ -951,20 +957,29 @@ export class Terrain {
       this.seaMat.normalMap.offset.set(this.time * 0.004, this.time * 0.0025);
       this.foam.material.opacity = 0.22 + 0.16 * Math.sin(this.time * 0.9);
     }
+    const vk = this.viewK || 1;
     if (this.treeCells)
       for (const c of this.treeCells) {
-        const vis = Math.hypot(c.cx - camPos.x, c.cz - camPos.z) < 820;
+        const vis = Math.hypot(c.cx - camPos.x, c.cz - camPos.z) < 820 * vk;
         for (const m of c.meshes) m.visible = vis;
       }
     // LOD by distance from the camera
     for (const c of this.chunks) {
-      const d = Math.hypot(c.cx - camPos.x, c.cz - camPos.z);
+      const d = Math.hypot(c.cx - camPos.x, c.cz - camPos.z) / vk;
       const lod = d < 420 ? 0 : d < 1100 ? 1 : 2;
       if (lod !== c.lod) {
         if (c.lod >= 0) c.meshes[c.lod].visible = false;
         c.meshes[lod].visible = true;
         c.lod = lod;
       }
+    }
+  }
+
+  /** Tree density setting: hide a share of the decorative (non-solid) trees. */
+  setTreeDensity(k) {
+    for (const c of this.treeCells || []) for (const m of c.meshes) {
+      const { full, solid } = m.userData;
+      m.count = Math.max(solid, Math.round(solid + (full - solid) * k));
     }
   }
 

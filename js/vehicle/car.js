@@ -742,6 +742,7 @@ export class Car {
 
   /** Distance LOD: full model up close, a painted block further out, nothing far away. */
   setLod(dist) {
+    dist /= this.game.settings.viewDistance || 1;
     const lod = dist < 240 ? 0 : dist < 1000 ? 1 : 2;
     if (lod === this.lod) return;
     const root = this.root;

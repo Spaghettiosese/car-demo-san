@@ -263,8 +263,8 @@ export class CameraRig {
         this.initialized = true;
       }
       if (m.down[0] || m.down[2]) {
-        this.orbitYaw -= m.dx * 0.005;
-        this.orbitPitch = clamp(this.orbitPitch + m.dy * 0.004, -0.4, 0.8);
+        this.orbitYaw -= m.dx * 0.005 * (S.sensitivity || 1);
+        this.orbitPitch = clamp(this.orbitPitch + m.dy * 0.004 * (S.sensitivity || 1) * (S.invertY ? -1 : 1), -0.4, 0.8);
       }
       this.distTarget = clamp(this.distTarget + m.wheel * 1.2, 5, 40);
       const yaw = carYaw + this.orbitYaw + (this.lookBack ? Math.PI : 0);
@@ -374,9 +374,10 @@ export class CameraRig {
   updateFree(dt, input) {
     const cam = this.camera;
     const m = input.mouse;
+    const S = this.game.settings;
     if (m.locked || m.down[0] || m.down[2]) {
-      this.freeYaw -= m.dx * 0.0025;
-      this.freePitch = clamp(this.freePitch - m.dy * 0.0025, -1.5, 1.5);
+      this.freeYaw -= m.dx * 0.0025 * (S.sensitivity || 1);
+      this.freePitch = clamp(this.freePitch - m.dy * 0.0025 * (S.sensitivity || 1) * (S.invertY ? -1 : 1), -1.5, 1.5);
     }
     const speed = (input.key('ShiftLeft') ? 40 : 12) * dt;
     _e.set(this.freePitch, this.freeYaw, this.freeRoll || 0, 'YXZ');
