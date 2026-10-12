@@ -107,6 +107,7 @@ function spawnRivals(ctx, path, n, opts = {}) {
     const px = p.x + Math.cos(yaw) * side * 2.6, pz = p.z - Math.sin(yaw) * side * 2.6;
     const gy = g.world.groundAt(px, pz, (p.y || 0) + 30, { y: 0 }).y;
     car.placeAt(px, gy, pz, yaw);
+    car.invulnerable = true; // rivals race on; they don't wreck on city traffic
     const rival = rivals[k];
     const drv = new PathDriver(g, car, path, { closed: !!opts.closed, skill: ctx.diff.skill * rival.skill, aggression: rival.aggression, laneOffset: side * 1.5 });
     drv.rival = rival;

@@ -45,7 +45,7 @@ export function newGarageEntry(cfg, extra = {}) {
 }
 
 export function newProfile(slot = 1) {
-  const car = newGarageEntry(starterConfig(), { odometer: 41_800_000 }); // metres: 41,800 km
+  const car = newGarageEntry(starterConfig(), { odometer: 41_800_000, fuel: 12 }); // metres: 41,800 km
   return {
     version: 2,
     slot,

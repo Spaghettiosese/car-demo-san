@@ -951,7 +951,10 @@ export class Interior {
     // interactions
     this.updateHover(input, cockpit);
     // displays at ~30 Hz, and only when you can see them (the cockpit cameras)
-    if (!cockpit) return;
+    if (!cockpit) {
+      if (this.drops?.length && this.game.env.rain < 0.05) this.drops.length = 0; // dry once the rain is gone
+      return;
+    }
     this.frame = (this.frame || 0) + 1;
     if (this.frame % 2 === 0) {
       this.drawCluster();

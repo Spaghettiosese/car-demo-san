@@ -1374,7 +1374,7 @@ export class TrafficManager {
       if (d.state !== 'drive' || d.noRecycle || d.car.police || d.car.service) continue;
       const rel = _v.copy(d.car.body.position).sub(pc.body.position);
       const dist = rel.length();
-      if (dist < bd && rel.dot(_fwd) / dist > 0.9 && Math.abs(d.car.body.velocity.dot(_fwd)) > 0.5) [best, bd] = [d, dist];
+      if (dist < bd && rel.dot(_fwd) / dist > 0.9 && Math.abs(rel.x * _fwd.z - rel.z * _fwd.x) < 1.6 && Math.abs(d.car.body.velocity.dot(_fwd)) > 0.5) [best, bd] = [d, dist];
     }
     if (!best || best.flashCd > 0) return;
     best.flashCd = 8;

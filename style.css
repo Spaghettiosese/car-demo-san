@@ -329,7 +329,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #07080a; col
 #turn.hidden { display: none; }
 #turn i { font-style: normal; font-size: 30px; color: #50beff; line-height: 1; width: 34px; text-align: center; }
 #turn b { color: #fff; }
-#subs { position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; max-width: 70vw; }
+#subs { position: absolute; left: 50%; bottom: calc(66px + 3.2em); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; max-width: 70vw; }
 #subs div { background: rgba(0,0,0,0.72); color: #fff; padding: 4px 12px; border-radius: 6px; font-size: 16px; text-align: center; }
 #subs b { margin-right: 6px; }
 #perf { position: absolute; right: 16px; top: 120px; border-radius: 8px; display: none; pointer-events: none; }

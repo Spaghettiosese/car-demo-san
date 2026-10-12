@@ -366,7 +366,6 @@ export class Game {
     this.env.frozen = s.timeScale === 0;
     this.traffic?.setDensity(s.traffic);
     this.audio?.applyVolumes?.();
-    this.applyAssistPreset(this.player.car);
   }
 
   /** HUD scale and the colour-blind palette. */
@@ -748,6 +747,7 @@ export class Game {
       return;
     }
     if (this.state === 'card') {
+      this.audio?.duck?.(true);
       if (input.pressed('pause')) this.activities?.closeCard();
       else if (input.pressed('restart') && this.activities?.resultsDef) this.activities.restart();
       return;
@@ -1393,6 +1393,9 @@ export class Game {
     this.hudHidden = false;
     this.gps = null;
     if (this.player.mode === 'foot') this.onFoot?.forceEnter?.();
+    // cars left lying around by the last session
+    for (const c of [...this.looseCars]) if (c !== this.player.car && !c.removed) this.removeCar(c);
+    this.looseCars.length = 0;
   }
 
   startDriving() {

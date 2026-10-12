@@ -463,7 +463,7 @@ export class FreeRoam {
     const npc = g.cars.find((c) => {
       if (c === car || c.removed || !c.controller || c.police || c.service) return false;
       const d = c.controller;
-      if (!drivers.includes(d) || d.state !== 'drive' || d.noRecycle || d.bSeg !== nl.seg) return false;
+      if (!drivers.includes(d) || d.state !== 'drive' || d.noRecycle || d.currentSeg !== nl.seg) return false;
       return c.speed < 0.5 && c.body.position.distanceTo(car.body.position) < 7;
     });
     if (!npc) return;

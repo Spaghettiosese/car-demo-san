@@ -210,6 +210,13 @@ export class PathDriver {
       this.reverseT = 1.3;
       this.resets = (this.resets || 0) + 1;
     }
+    // hemmed in by traffic for a long time: get back on the line ahead
+    this.crawlT = v < 1.5 && !this.frozen ? (this.crawlT || 0) + dt : 0;
+    if (this.crawlT > 5) {
+      this.crawlT = 0;
+      this.resets = 0;
+      this.resetOnTrack();
+    }
     if (this.flipT > 2.5 || this.offPath > 25 || (this.resets || 0) > 3) this.resetOnTrack();
     this.steerCmd = (this.steerCmd || 0) + (steer - (this.steerCmd || 0)) * Math.min(1, dt * 12);
     this.setInputs(thr, brk, this.steerCmd);

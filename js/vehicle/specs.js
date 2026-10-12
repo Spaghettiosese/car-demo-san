@@ -159,7 +159,7 @@ Object.assign(BODIES, {
     defaults: { engine: 'v12', drivetrain: 'awd', diff: 'lsd', gearTop: 92, tire: 'sport' },
   },
   truck: {
-    name: 'Titan Box 7', kind: 'Box truck', L: 7.2, R: 0.48, axles: [2.6, -2.2],
+    name: 'Titan Box 7', box: true, kind: 'Box truck', L: 7.2, R: 0.48, axles: [2.6, -2.2],
     mass: 6400, comY: 1.15, frontWeight: 0.45, cdA: 4.0, springHz: [1.35, 1.45], travel: [0.18, 0.15],
     top: [[-3.6, 3.2], [-3.55, 3.3], [1.9, 3.3], [1.95, 2.72], [2.1, 2.72], [2.95, 1.72], [3.3, 1.5], [3.5, 1.3], [3.6, 1.0]],
     belt: [[-3.6, 1.3], [1.95, 1.3], [2.3, 1.55], [2.95, 1.5], [3.3, 1.4], [3.6, 1.0]],
@@ -175,7 +175,7 @@ Object.assign(BODIES, {
     defaults: { engine: 'diesel', drivetrain: 'rwd', diff: 'open', gearTop: 34, tire: 'offroad' },
   },
   bus: {
-    name: 'MetroLiner 12', kind: 'City bus', L: 11.5, R: 0.5, axles: [3.6, -2.6],
+    name: 'MetroLiner 12', box: true, kind: 'City bus', L: 11.5, R: 0.5, axles: [3.6, -2.6],
     mass: 11500, comY: 1.2, frontWeight: 0.36, cdA: 6.4, springHz: [1.25, 1.3], travel: [0.16, 0.16],
     top: [[-5.75, 2.9], [-5.7, 3.05], [-5.4, 3.12], [5.4, 3.12], [5.5, 3.08], [5.75, 1.3]],
     belt: [[-5.75, 1.3], [5.4, 1.15], [5.75, 0.95]],

@@ -108,7 +108,8 @@ export class Garage {
     const g = this.game;
     this.from = from;
     if (g.tutorial?.active) g.tutorial.sawGarage = true;
-    const live = from !== 'menu' && g.player.car;
+    // in Career only your own car is edited (a stolen one is not)
+    const live = from !== 'menu' && g.player.car && (!this.career || g.player.car.careerId === this.career.car.id) && g.player.car;
     if (this.career) {
       this.entry = this.career.car;
       this.cfg = { ...(live ? g.player.car.cfg : this.entry.cfg) };

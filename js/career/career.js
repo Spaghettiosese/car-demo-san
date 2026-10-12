@@ -217,7 +217,8 @@ export class Career {
     e.odometer = Math.round(e.odometerBase ?? e.odometer) + car.ext.odo * 1000;
     e.serviceAt = car.ext.serviceAt;
     e.dirt = +car.ext.dirt.toFixed(2);
-    e.damage = car.damageSnapshot();
+    // (during a replay the lattice holds replayed shapes, not the car's real damage)
+    if (!this.game.replay?.active) e.damage = car.damageSnapshot();
     this.dirty = true;
   }
   /** Apply a garage entry's saved state to a freshly spawned car. */

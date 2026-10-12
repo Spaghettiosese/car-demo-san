@@ -149,7 +149,7 @@ function buildLoft(prof, simple) {
         return 'glassQ';
       }
       // the sail between the side glass and the rear window: dark glass, not a painted spike
-      if (zm < Z.roofR && zm >= Z.deck && !bed) return 'glassQ';
+      if (zm < Z.roofR && zm >= Z.deck && !bed && !b.box) return 'glassQ';
       return 'body';
     }
     if (seg >= 2 && !simple) {
@@ -645,8 +645,9 @@ export function buildCarModel(cfg, tuning, opts = {}) {
   } else {
     paintMap = sharedLivery(cfg.body, cfg, prof);
   }
-  const paint = paintMaterial(npc && cfg.livery !== 'police' && cfg.livery !== 'taxi' ? cfg.paint : '#ffffff', cfg.finish, npc, paintMap);
-  if (npc && paintMap && cfg.livery !== 'police' && cfg.livery !== 'taxi') paint.color.set(cfg.paint);
+  const baked = cfg.livery === 'police' || cfg.livery === 'taxi' || cfg.livery === 'side' || cfg.livery === 'stripes'; // colours painted into the texture
+  const paint = paintMaterial(npc && !baked ? cfg.paint : '#ffffff', cfg.finish, npc, paintMap);
+  if (npc && paintMap && !baked) paint.color.set(cfg.paint);
   const glass = glassMaterial(cfg.tint ?? 0.3, npc);
 
   const loft = buildLoft(prof, simple);

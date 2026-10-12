@@ -61,14 +61,14 @@ export class Services {
       const steel = (Services.boomMat ||= new THREE.MeshStandardMaterial({ color: 0x2b2d31, metalness: 0.6, roughness: 0.45 }));
       const boom = new THREE.Group();
       const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.9), steel);
-      arm.rotation.x = -0.45;
-      arm.position.set(0, 0.42, -0.35);
+      arm.rotation.x = 0.45;
+      arm.position.set(0, 0.3, -0.5);
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.16), steel);
       post.position.set(0, 0.1, 0.45);
       const hook = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.12), steel);
-      hook.position.set(0, -0.32, -1.2);
+      hook.position.set(0, -0.28, -1.1);
       boom.add(arm, post, hook);
-      boom.position.set(0, car.boundsMax.y - 0.55, car.boundsMin.z + 1.1);
+      boom.position.set(0, car.boundsMax.y - 0.7, car.boundsMin.z + 1.6);
       car.root.add(boom);
     }
     car.sys.headlights = 2;
